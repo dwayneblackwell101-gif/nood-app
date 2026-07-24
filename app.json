@@ -7,12 +7,16 @@
     "icon": "./assets/images/nood-brand-logo.png",
     "scheme": "shop.66320990292.nood",
     "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.noodcaribbean.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "NOOD uses the camera for visual product search and scanning product photos.",
+        "NSCameraUsageDescription": "NOOD uses the camera so you can take a photo and search products by image.",
         "NSPhotoLibraryUsageDescription": "NOOD uses your photo library so you can choose a profile picture or search products by image.",
+        "NSCameraUsageDescription": "NOOD uses the camera for AR try-on and visual product search.",
+        "NSPhotoLibraryUsageDescription": "NOOD uses your photo library to save try-on photos and search products by image.",
+        "NSPhotoLibraryAddUsageDescription": "NOOD saves your try-on photos to your camera roll.",
         "CFBundleURLTypes": [
           {
             "CFBundleURLName": "com.noodcaribbean.app.shopify-auth",
@@ -21,6 +25,9 @@
             ]
           }
         ]
+      },
+      "entitlements": {
+        "com.apple.developer.arkit": true
       }
     },
     "android": {
@@ -85,6 +92,12 @@
         "expo-image-picker",
         {
           "photosPermission": "NOOD uses your photo library so you can choose a profile picture or search products by image."
+        }
+      ],
+      [
+        "@reactvision/react-viro",
+        {
+          "arCoreEnabled": true
         }
       ]
     ],
