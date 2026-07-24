@@ -2191,6 +2191,17 @@ export default function ProductScreen() {
       )}
 
       <View style={styles.bottomBar}>
+        {productPrimaryImage && (
+          <TouchableOpacity
+            style={styles.tryOnButton}
+            onPress={() => router.push(`/try-on/${product.handle}` as any)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="camera" size={20} color="#ff6a00" />
+            <Text style={styles.tryOnText}>Try On</Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
           style={[styles.bottomAddButton, productSoldOut && styles.bottomActionDisabled]}
           onPress={handleAddToCart}
@@ -3138,6 +3149,24 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 22,
     fontWeight: '700',
+  },
+  tryOnButton: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#ff6a00',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginRight: 8,
+  },
+  tryOnText: {
+    color: '#ff6a00',
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 2,
   },
   bottomBar: {
     position: 'absolute',
