@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { BackHandler, StyleSheet, Text, View } from 'react-native';
+import { Animated, BackHandler, StyleSheet, Text, View } from 'react-native';
 import { PlatformPressable } from '@react-navigation/elements';
 import { useNavigationState } from '@react-navigation/native';
 import { Tabs, usePathname, useRouter } from 'expo-router';
@@ -8,7 +8,28 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCart } from '../../context/CartContext';
 import { useWishlist } from '../../context/WishlistContext';
 
-type TabPath = '/' | '/categories' | '/cart' | '/wishlist' | '/account';
+type TabPath = '/' | '/deals' | '/categories' | '/cart' | '/wishlist' | '/account';
+
+function BlinkingDealsIcon({ color, size }: { color: string; size: number }) {
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.35, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+
+  return (
+    <Animated.View style={{ opacity }}>
+      <Ionicons name="pricetag" size={size} color={color} />
+    </Animated.View>
+  );
+}
 
 function isHomeTabPath(pathname: string): boolean {
   return (
@@ -42,6 +63,7 @@ function CartTabIcon({
 
 function getTabPath(pathname: string): TabPath | null {
   if (isHomeTabPath(pathname)) return '/';
+  if (pathname === '/deals') return '/deals';
   if (pathname === '/categories') return '/categories';
   if (pathname === '/cart') return '/cart';
   if (pathname === '/wishlist') return '/wishlist';
@@ -132,6 +154,16 @@ export default function TabLayout() {
           ),
           tabBarButton: (props) => (
             <PlatformPressable {...props} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="deals"
+        options={{
+          title: 'Deals',
+          tabBarIcon: ({ color, size }) => (
+            <BlinkingDealsIcon color={color} size={size} />
           ),
         }}
       />

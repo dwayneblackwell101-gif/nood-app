@@ -2571,7 +2571,16 @@ const HeroUpdatesSlide = React.memo(function HeroUpdatesSlide({
         bounces
       >
         {HERO_UPDATE_ITEMS.map((item) => (
-          <View key={item.id} style={styles.heroUpdateCard}>
+          <TouchableOpacity
+            key={item.id}
+            style={styles.heroUpdateCard}
+            activeOpacity={0.9}
+            onPress={() => {
+              if (item.id === 'deals') {
+                router.push('/(tabs)/deals' as any);
+              }
+            }}
+          >
             <View style={[styles.heroUpdateIconWrap, { backgroundColor: `${item.tint}12` }]}>
               <Ionicons name={item.icon} size={23} color={item.tint} />
             </View>
@@ -2589,7 +2598,7 @@ const HeroUpdatesSlide = React.memo(function HeroUpdatesSlide({
             </View>
 
             <View style={[styles.heroUpdateDot, { backgroundColor: item.tint }]} />
-          </View>
+          </TouchableOpacity>
         ))}
       </ScrollView>
     </View>
