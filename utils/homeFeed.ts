@@ -282,6 +282,22 @@ export function buildBalancedHomeFeed<T extends HomeFeedProduct>(
     (category) => (groups.get(category)?.length || 0) > 0
   );
   const categoryOrder = getRotatedCategoryOrder(activeCategories, mixSeed);
+
+  // Equal distribution: cap each category at floor(total / N) products
+  // so no single category dominates the feed.
+  const totalUnique = seenIds.size;
+  const slotsPerCategory = Math.floor(totalUnique / Math.max(activeCategories.length, 1));
+  const remainder = totalUnique - slotsPerCategory * activeCategories.length;
+
+  activeCategories.forEach((category, index) => {
+    const group = groups.get(category) || [];
+    // First N% categories get 1 extra slot for the remainder
+    const cap = index < remainder ? slotsPerCategory + 1 : slotsPerCategory;
+    if (group.length > cap) {
+      groups.set(category, group.slice(0, cap));
+    }
+  });
+
   const pointers = new Map<MainCategory, number>();
 
   activeCategories.forEach((category) => {

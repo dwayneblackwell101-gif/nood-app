@@ -47,7 +47,8 @@ export async function shopifyStorefrontGraphql(
   }
 
   if (json?.errors?.length) {
-    console.log('[NOOD product] Shopify storefront GraphQL errors');
+    const errMessages = json.errors.map((e: any) => e?.message || e?.extensions?.message || 'unknown').join('; ');
+    console.error('[NOOD product] Shopify storefront GraphQL error:', errMessages);
   }
 
   return json;

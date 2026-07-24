@@ -1233,6 +1233,22 @@ export async function fetchCatalogPath(
   return backendRefresh;
 }
 
+function normalizeStorefrontSortKey(sort: string): string {
+  const key = String(sort || '').replace(/[\s_-]/g, '').toLowerCase();
+  const map: Record<string, string> = {
+    updated: 'UPDATED_AT',
+    updatedat: 'UPDATED_AT',
+    created: 'CREATED_AT',
+    createdat: 'CREATED_AT',
+    title: 'TITLE',
+    bestselling: 'BEST_SELLING',
+    best: 'BEST_SELLING',
+    price: 'PRICE',
+    manual: 'MANUAL',
+  };
+  return map[key] || 'UPDATED_AT';
+}
+
 function parseProductPath(path: string):
   | { type: 'detail'; handle: string }
   | { type: 'list'; first: number; after: string | null; sortKey?: string }
@@ -1248,7 +1264,7 @@ function parseProductPath(path: string):
     const params = new URLSearchParams(path.replace('/api/catalog/products?', ''));
     const first = Number(params.get('first') || params.get('limit') || 50);
     const after = params.get('after');
-    const sortKey = (params.get('sort') || 'updated').toUpperCase();
+    const sortKey = normalizeStorefrontSortKey(params.get('sort') || 'updated');
     return { type: 'list', first, after, sortKey };
   }
   const collectionMatch = path.match(/\/api\/catalog\/collections\/([^/]+)\/products/);
@@ -1321,7 +1337,15 @@ async function tryStorefrontFallback(path: string): Promise<CatalogJson | null> 
 
 export async function fetchProductDetailFromBackend(handle: string) {
   const path = `/api/catalog/products/${encodeURIComponent(String(handle || '').trim())}`;
-  return getBackendJson(path, { catalog: true, timeoutMs: 20000 });
+  try {
+    return await getBackendJson(path, { catalog: true, timeoutMs: 20000 });
+  } catch (error) {
+    // Backend failed — fall back to direct Storefront API
+    console.log('[NOOD catalog] backend detail fetch failed, trying Storefront:', handle);
+    const result = await tryStorefrontFallback(path);
+    if (result) return result;
+    throw error;
+  }
 }
 
 export async function catalogFetch(

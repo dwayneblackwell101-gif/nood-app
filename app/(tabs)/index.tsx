@@ -3915,8 +3915,16 @@ export default function HomeScreen() {
       console.log('[NOOD feed] background catalog enrich skipped', String(error));
     } finally {
       enrichInFlightRef.current = false;
+
+      // After enrichment, re-mix the full product pool so categories are equally distributed.
+      const currentProducts = allProductsRef.current;
+      if (currentProducts.length > 0) {
+        const mixed = buildBalancedHomeFeed(currentProducts, feedMixKeyRef.current);
+        allProductsRef.current = mixed;
+        setAllProducts(mixed);
+      }
     }
-  }, [fetchStoreProductsPage, persistHomeProductsCache]);
+  }, [fetchStoreProductsPage, persistHomeProductsCache, feedMixKeyRef]);
 
   const applyHomeProductFeed = useCallback(
     (

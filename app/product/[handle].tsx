@@ -782,11 +782,14 @@ export default function ProductScreen() {
 
       let p = await getProductFast(productHandle, routePreview);
 
-      if (p && !productHasRenderableVariants(p)) {
+      if (p && (!productHasRenderableVariants(p) || !p.descriptionHtml || !p.images?.edges?.length)) {
+        // Cache hit but product is thin (missing images, description, or variants).
+        // Force a fresh fetch from Storefront API to get full product data.
         const refreshed = await refreshProductDetailFromBackend(productHandle, p);
-        if (refreshed && productHasRenderableVariants(refreshed)) {
+        if (refreshed) {
           p = refreshed;
           backendVariantRefreshRef.current = productHandle;
+          logProductStockState(p, 'detail');
         }
       }
 

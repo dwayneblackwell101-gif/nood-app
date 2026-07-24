@@ -105,11 +105,11 @@ const STOREFRONT_PRODUCT_DETAIL_QUERY = `
 `;
 
 const STOREFRONT_COLLECTION_PRODUCTS_QUERY = `
-  query StorefrontCollectionProducts($handle: String!, $first: Int!, $after: String, $sortKey: ProductSortKeys) {
+  query StorefrontCollectionProducts($handle: String!, $first: Int!, $after: String) {
     collectionByHandle(handle: $handle) {
       title
       handle
-      products(first: $first, after: $after, sortKey: $sortKey, reverse: true) {
+      products(first: $first, after: $after) {
         edges { node { ${PRODUCT_LIST_FRAGMENT} } }
         pageInfo { hasNextPage endCursor }
       }
