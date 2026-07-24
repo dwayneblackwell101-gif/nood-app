@@ -10,6 +10,12 @@ import {
   isStorageFullError,
 } from './catalog-cache';
 import { CATALOG_CACHE_DEBUG } from './debug-flags';
+import {
+  fetchShopifyProductList,
+  fetchShopifyProductDetail,
+  fetchShopifyCollectionProducts,
+  isStorefrontCatalogEmpty,
+} from './shopify-catalog';
 const PRODUCT_FEED_TIMEOUT_MS = 25000;
 const COLLECTION_PRODUCTS_TIMEOUT_MS = 25000;
 const SEARCH_CATALOG_TIMEOUT_MS = 30000;
@@ -1086,8 +1092,29 @@ async function refreshCatalogFromBackend(
   cacheKey: string,
   timeoutMs?: number
 ): Promise<CatalogJson> {
-  let payload: CatalogJson;
   const resolvedTimeoutMs = resolveCatalogRequestTimeoutMs(path, timeoutMs);
+  const isRecommendationsPath = path.includes('/api/catalog/products/recommendations');
+  const isSearchPath = path.includes('/api/catalog/search');
+  const isProductPath = parseProductPath(path) !== null;
+
+  // Direct: for product list, detail, and collection products, call Shopify Storefront
+  // API directly — skip the backend entirely. This prevents nood-backend from being a
+  // dependency for product display. The backend is only used for recommendations, search,
+  // and non-product endpoints.
+  if (isProductPath && !isRecommendationsPath) {
+    const storefrontResult = await tryStorefrontFallback(path);
+    if (storefrontResult) {
+      console.log('[NOOD catalog] Storefront direct fetch succeeded', { path });
+      if (cacheKey) void writeLocalCatalogCache(cacheKey, path, storefrontResult);
+      return storefrontResult;
+    }
+
+    // Storefront failed — fall back to backend only for product data
+    console.warn('[NOOD catalog] Storefront direct fetch failed; falling back to backend', { path });
+  }
+
+  // Backend call for everything else (or fallback when Storefront fails)
+  let payload: CatalogJson;
   const isCollectionProductsPath =
     path.includes('/api/catalog/collections/') && path.includes('/products');
 
@@ -1097,7 +1124,7 @@ async function refreshCatalogFromBackend(
       catalog: true,
     })) as CatalogJson;
   } catch (error) {
-    if (path.includes('/api/catalog/products/recommendations')) {
+    if (isRecommendationsPath) {
       console.log('[NOOD catalog] recommendations request failed; using empty fallback', {
         path,
         error: String((error as any)?.message || error),
@@ -1108,7 +1135,7 @@ async function refreshCatalogFromBackend(
       };
     }
 
-    if (isCollectionProductsPath || path.includes('/api/catalog/search')) {
+    if (isCollectionProductsPath || isSearchPath) {
       console.log('[NOOD catalog] background refresh failed; keeping cached response', {
         path,
         error: String((error as any)?.message || error),
@@ -1204,6 +1231,92 @@ export async function fetchCatalogPath(
   }
 
   return backendRefresh;
+}
+
+function parseProductPath(path: string):
+  | { type: 'detail'; handle: string }
+  | { type: 'list'; first: number; after: string | null; sortKey?: string }
+  | { type: 'collection'; handle: string; first: number; after: string | null }
+  | null {
+  if (path.startsWith('/api/catalog/products/')) {
+    const rest = path.replace('/api/catalog/products/', '');
+    const handle = rest.split('?')[0].split('/')[0];
+    if (handle) return { type: 'detail', handle: decodeURIComponent(handle) };
+    return null;
+  }
+  if (path.startsWith('/api/catalog/products?')) {
+    const params = new URLSearchParams(path.replace('/api/catalog/products?', ''));
+    const first = Number(params.get('first') || params.get('limit') || 50);
+    const after = params.get('after');
+    const sortKey = (params.get('sort') || 'updated').toUpperCase();
+    return { type: 'list', first, after, sortKey };
+  }
+  const collectionMatch = path.match(/\/api\/catalog\/collections\/([^/]+)\/products/);
+  if (collectionMatch) {
+    const handle = decodeURIComponent(collectionMatch[1]);
+    const params = new URLSearchParams(path.split('?')[1] || '');
+    const first = Number(params.get('first') || params.get('limit') || 50);
+    const after = params.get('after');
+    return { type: 'collection', handle, first, after };
+  }
+  return null;
+}
+
+async function tryStorefrontFallback(path: string): Promise<CatalogJson | null> {
+  const parsed = parseProductPath(path);
+  if (!parsed) return null;
+
+  try {
+    if (parsed.type === 'detail') {
+      console.log('[NOOD catalog] trying Storefront fallback for product detail:', parsed.handle);
+      const result = await fetchShopifyProductDetail(parsed.handle);
+      if (!result?.productByHandle) return null;
+      return {
+        data: {
+          product: result.productByHandle,
+          productByHandle: result.productByHandle,
+        },
+        source: 'shopify',
+      };
+    }
+
+    if (parsed.type === 'list') {
+      console.log('[NOOD catalog] trying Storefront fallback for product list');
+      const result = await fetchShopifyProductList({
+        first: parsed.first,
+        after: parsed.after,
+        sortKey: parsed.sortKey,
+      });
+      if (!result?.products?.edges?.length) return null;
+      return {
+        data: {
+          products: result.products,
+        },
+        source: 'shopify',
+      };
+    }
+
+    if (parsed.type === 'collection') {
+      console.log('[NOOD catalog] trying Storefront fallback for collection:', parsed.handle);
+      const result = await fetchShopifyCollectionProducts(parsed.handle, {
+        first: parsed.first,
+        after: parsed.after,
+      });
+      if (!result?.collectionByHandle) return null;
+      return {
+        data: result,
+        source: 'shopify',
+      };
+    }
+  } catch (err) {
+    console.log('[NOOD catalog] Storefront fallback failed:', {
+      path,
+      error: String((err as any)?.message || err),
+    });
+    return null;
+  }
+
+  return null;
 }
 
 export async function fetchProductDetailFromBackend(handle: string) {
