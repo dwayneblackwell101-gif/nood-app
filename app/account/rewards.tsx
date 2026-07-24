@@ -28,6 +28,10 @@ import RequireSignIn from '../../components/RequireSignIn';
 import { useCart } from '../../context/CartContext';
 import { useUser } from '../../context/UserContext';
 import { BASE_CURRENCY } from '../../utils/currency';
+import {
+  fetchShopifyCollectionsList,
+  type CollectionSummary,
+} from '../../utils/shopify-catalog';
 import { resolveCustomerStorageKey } from '../../utils/customer-storage';
 import { getLuckySpinStatus, recordLuckySpinUsage, type LuckySpinStatus } from '../../utils/lucky-spin';
 import { formatGameRewardUsd } from '../../utils/reward-currency';
@@ -147,6 +151,17 @@ function RewardsContent() {
 
   const [modalVisible, setModalVisible] = useState(false);
   const [modalStep, setModalStep] = useState<'loading' | 'wheel' | 'reveal' | 'used'>('loading');
+  const [collections, setCollections] = useState<CollectionSummary[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    fetchShopifyCollectionsList(12)
+      .then((items) => {
+        if (active) setCollections(items);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     setScratchPopupExternalModalOpen(modalVisible);
@@ -621,6 +636,35 @@ function RewardsContent() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {collections.length > 0 && (
+          <View style={styles.collectionSection}>
+            <Text style={styles.sectionTitle}>Browse collections</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.collectionScroll}
+            >
+              {collections.map((col) => (
+                <TouchableOpacity
+                  key={col.id}
+                  style={styles.collectionCard}
+                  activeOpacity={0.9}
+                  onPress={() => router.push(`/collection/${col.handle}` as any)}
+                >
+                  {col.imageUrl ? (
+                    <Image source={{ uri: col.imageUrl }} style={styles.collectionImage} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.collectionImage, styles.collectionImagePlaceholder]}>
+                      <Ionicons name="grid-outline" size={24} color="#999" />
+                    </View>
+                  )}
+                  <Text style={styles.collectionTitle} numberOfLines={2}>{col.title}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         <View style={styles.lockedCard}>
           <View style={styles.sectionHeaderInline}>
@@ -1670,6 +1714,39 @@ const styles = StyleSheet.create({
     color: '#111',
     fontSize: 15,
     fontWeight: '900',
+  },
+
+  collectionSection: {
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  collectionScroll: {
+    paddingHorizontal: 14,
+    paddingRight: 26,
+    gap: 10,
+  },
+  collectionCard: {
+    width: 120,
+    borderRadius: 14,
+    backgroundColor: '#f4f4f6',
+    overflow: 'hidden',
+  },
+  collectionImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 14,
+  },
+  collectionImagePlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#e8e8ec',
+  },
+  collectionTitle: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#111',
   },
 });
 

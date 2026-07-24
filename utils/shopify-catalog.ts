@@ -162,6 +162,49 @@ export async function fetchShopifyCollectionProducts(
   return { collectionByHandle: response?.data?.collectionByHandle || null };
 }
 
+const STOREFRONT_COLLECTIONS_LIST_QUERY = `
+  query StorefrontCollectionsList($first: Int!) {
+    collections(first: $first, sortKey: UPDATED_AT, reverse: true) {
+      edges {
+        node {
+          id
+          title
+          handle
+          image { url altText }
+        }
+      }
+    }
+  }
+`;
+
+export interface CollectionSummary {
+  id: string;
+  title: string;
+  handle: string;
+  imageUrl: string | null;
+}
+
+export async function fetchShopifyCollectionsList(
+  first = 15
+): Promise<CollectionSummary[]> {
+  const response = await shopifyStorefrontGraphql(STOREFRONT_COLLECTIONS_LIST_QUERY, {
+    first: Math.min(Math.max(1, first), 50),
+  });
+  const edges = response?.data?.collections?.edges || [];
+  return edges
+    .map((edge: any) => {
+      const node = edge?.node;
+      if (!node?.handle) return null;
+      return {
+        id: node.id || node.handle,
+        title: node.title || node.handle,
+        handle: node.handle,
+        imageUrl: node.image?.url || null,
+      };
+    })
+    .filter(Boolean) as CollectionSummary[];
+}
+
 /**
  * Check if a Storefront API response indicates a product miss or empty catalog.
  */
