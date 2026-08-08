@@ -1320,7 +1320,9 @@ async function tryStorefrontFallback(path: string): Promise<CatalogJson | null> 
       });
       if (!result?.collectionByHandle) return null;
       return {
-        data: result,
+        data: {
+          collectionByHandle: result.collectionByHandle,
+        } as Record<string, unknown>,
         source: 'shopify',
       };
     }

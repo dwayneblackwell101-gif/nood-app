@@ -130,27 +130,33 @@ export const CategoryBubbleCell = memo(function CategoryBubbleCell({
 }: CategoryBubbleCellProps) {
   return (
     <TouchableOpacity
-      activeOpacity={0.88}
+      activeOpacity={0.85}
       style={styles.shopByCategoryBubbleCell}
       onPress={onPress}
     >
+      {/* Premium ring: white base + brand gradient border + soft shadow */}
       <View style={styles.shopByCategoryBubbleRing}>
-        {hasImage && imageUri ? (
-          <CategoryOptimizedImage
-            uri={imageUri}
-            style={styles.shopByCategoryBubbleImage}
-            recyclingKey={`bubble-${itemHandle}`}
-          />
-        ) : (
-          <View style={styles.shopByCategoryBubblePlaceholder}>
-            <Ionicons name={placeholderIcon} size={22} color="#b8b8b8" />
-          </View>
-        )}
+        <View style={styles.shopByCategoryBubbleInner}>
+          {hasImage && imageUri ? (
+            <CategoryOptimizedImage
+              uri={imageUri}
+              style={styles.shopByCategoryBubbleImage}
+              recyclingKey={`bubble-${itemHandle}`}
+            />
+          ) : (
+            <View style={styles.shopByCategoryBubblePlaceholder}>
+              <Ionicons name={placeholderIcon} size={24} color="#ff6a00" />
+            </View>
+          )}
+        </View>
         {badge ? (
           <View style={styles.shopByCategoryBubbleBadge}>
             <Text style={styles.shopByCategoryBubbleBadgeText}>{badge}</Text>
           </View>
         ) : null}
+        <View style={styles.shopByCategoryBubbleSparkle} pointerEvents="none">
+          <Ionicons name="sparkles" size={12} color="#fff" />
+        </View>
       </View>
       <Text numberOfLines={2} style={styles.shopByCategoryBubbleLabel}>
         {title}

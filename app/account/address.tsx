@@ -16,6 +16,13 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useUser } from '../../context/UserContext';
 import { ShippingAddress, useAddressBook } from '../../context/AddressContext';
 import { noodAlert } from '../../utils/nood-alert';
+import { AddressPickerField } from '../../components/AddressPickerField';
+import {
+  getCitiesForRegion,
+  getCountryFixtures,
+  getRegionsForCountry,
+  hasFixturesForCountry,
+} from '../../utils/address-fixtures';
 
 const EMPTY_FORM = {
   fullName: '',
@@ -60,6 +67,40 @@ function AddressContent() {
     () => addresses.find((address) => address.isDefault)?.id || addresses[0]?.id || '',
     [addresses]
   );
+
+  // Fixture-driven picker options for country → region → city.
+  const countryOptions = useMemo(
+    () =>
+      getCountryFixtures().map((c) => ({ value: c.code, label: c.name })).concat(
+        form.country && !getCountryFixtures().some((c) => c.code === form.country)
+          ? [{ value: form.country, label: form.country }]
+          : []
+      ),
+    [form.country]
+  );
+
+  const selectedCountryCode = getCountryFixtures().find((c) => c.name === form.country)?.code || form.country;
+  const regionOptions = useMemo(
+    () =>
+      getRegionsForCountry(selectedCountryCode).map((r) => ({ value: r.name, label: r.name })).concat(
+        form.region && !getRegionsForCountry(selectedCountryCode).some((r) => r.name === form.region)
+          ? [{ value: form.region, label: form.region }]
+          : []
+      ),
+    [form.region, selectedCountryCode]
+  );
+
+  const cityOptions = useMemo(
+    () =>
+      getCitiesForRegion(selectedCountryCode, form.region).map((city) => ({ value: city, label: city })).concat(
+        form.city && !getCitiesForRegion(selectedCountryCode, form.region).includes(form.city)
+          ? [{ value: form.city, label: form.city }]
+          : []
+      ),
+    [form.city, form.region, selectedCountryCode]
+  );
+
+  const hasCountryFixtures = hasFixturesForCountry(selectedCountryCode);
 
   const openAddModal = () => {
     setEditingAddress(null);
@@ -292,9 +333,47 @@ function AddressContent() {
               <AddressInput label="Phone number" value={form.phone} onChangeText={(value) => updateField('phone', value)} keyboardType="phone-pad" />
               <AddressInput label="Address line 1" value={form.address1} onChangeText={(value) => updateField('address1', value)} />
               <AddressInput label="Address line 2 optional" value={form.address2} onChangeText={(value) => updateField('address2', value)} />
-              <AddressInput label="City / town" value={form.city} onChangeText={(value) => updateField('city', value)} />
-              <AddressInput label="Region / state / parish" value={form.region} onChangeText={(value) => updateField('region', value)} />
-              <AddressInput label="Country" value={form.country} onChangeText={(value) => updateField('country', value)} />
+              <AddressPickerField
+                label="Country"
+                value={form.country}
+                placeholder="Select a country"
+                options={countryOptions.map((o) => ({
+                  value: o.value,
+                  label: o.label,
+                }))}
+                onChange={(codeOrName) => {
+                  const country = getCountryFixtures().find((c) => c.code === codeOrName);
+                  // Reset region/city when country changes.
+                  updateField('country', country?.name || codeOrName);
+                  updateField('region', '');
+                  updateField('city', '');
+                }}
+              />
+              {hasCountryFixtures ? (
+                <AddressPickerField
+                  label="Region / state / parish"
+                  value={form.region}
+                  placeholder="Select a region"
+                  options={regionOptions}
+                  onChange={(region) => {
+                    updateField('region', region);
+                    updateField('city', '');
+                  }}
+                />
+              ) : (
+                <AddressInput label="Region / state / parish" value={form.region} onChangeText={(value) => updateField('region', value)} />
+              )}
+              {hasCountryFixtures && form.region ? (
+                <AddressPickerField
+                  label="City / town"
+                  value={form.city}
+                  placeholder="Select a city or town"
+                  options={cityOptions}
+                  onChange={(city) => updateField('city', city)}
+                />
+              ) : (
+                <AddressInput label="City / town" value={form.city} onChangeText={(value) => updateField('city', value)} />
+              )}
               <AddressInput label="Postal code optional" value={form.postalCode} onChangeText={(value) => updateField('postalCode', value)} />
               <AddressInput
                 label="Delivery instructions optional"

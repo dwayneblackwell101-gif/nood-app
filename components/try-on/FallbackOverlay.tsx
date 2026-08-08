@@ -14,7 +14,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { getARFallbackMessage, type ARMode } from './ProductTypeResolver';
+import { getARModeDescription, type ARMode } from './ProductTypeResolver';
 
 interface Props {
   imageUrl: string;
@@ -78,7 +78,7 @@ export default function FallbackOverlay({
     ],
   }));
 
-  const fallbackMsg = getARFallbackMessage(arMode);
+  const fallbackMsg = getARModeDescription(arMode);
 
   return (
     <>

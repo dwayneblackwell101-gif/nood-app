@@ -371,7 +371,14 @@ export function getEligibleOrders(orders: any[] = [], requests: ReturnRequest[] 
   );
 }
 
-export function getOrderItems(order: any) {
+export type OrderItemSummary = {
+  id: string;
+  title: string;
+  quantity: number;
+  image: string;
+};
+
+export function getOrderItems(order: any): OrderItemSummary[] {
   const items = Array.isArray(order?.items) ? order.items : [];
   return items.map((item: any, index: number) => ({
     id: String(item?.variantId || item?.id || `${order?.id || 'order'}-${index}`),

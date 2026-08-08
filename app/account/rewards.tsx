@@ -25,6 +25,10 @@ import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import RequireSignIn from '../../components/RequireSignIn';
+import { DailyStreakCard } from '../../components/DailyStreakCard';
+import { DailyRewardsCalendar } from '../../components/DailyRewardsCalendar';
+import { VipStatusCard } from '../../components/VipStatusCard';
+import { QuestsPanel } from '../../components/QuestsPanel';
 import { useCart } from '../../context/CartContext';
 import { useUser } from '../../context/UserContext';
 import { BASE_CURRENCY } from '../../utils/currency';
@@ -526,6 +530,14 @@ function RewardsContent() {
           </View>
         </View>
 
+        <DailyStreakCard />
+        <DailyRewardsCalendar />
+        <VipStatusCard
+          qualifyingSpendUsd={qualifyingSpend}
+          formatMoney={(value) => formatMoney?.(convertPrice?.(value, BASE_CURRENCY, selectedCurrency) ?? value, selectedCurrency) || `$${Number(value).toFixed(2)}`}
+        />
+        <QuestsPanel />
+
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
             <View>
@@ -636,6 +648,24 @@ function RewardsContent() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Style Challenges entry */}
+        <TouchableOpacity
+          style={styles.challengesCard}
+          activeOpacity={0.9}
+          onPress={() => router.push('/style-challenges' as any)}
+        >
+          <View style={styles.challengesIcon}>
+            <Text style={styles.challengesEmoji}>🏆</Text>
+          </View>
+          <View style={styles.challengesCopy}>
+            <Text style={styles.challengesTitle}>Style Challenges</Text>
+            <Text style={styles.challengesSubtitle}>
+              Show your look, vote on others, win store credit
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#ff6a00" />
+        </TouchableOpacity>
 
         {collections.length > 0 && (
           <View style={styles.collectionSection}>
@@ -1720,6 +1750,31 @@ const styles = StyleSheet.create({
     marginTop: 14,
     marginBottom: 6,
   },
+  challengesCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#f0e2d3',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginHorizontal: 14,
+    marginBottom: 10,
+  },
+  challengesIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#fff0e0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  challengesEmoji: { fontSize: 22 },
+  challengesCopy: { flex: 1 },
+  challengesTitle: { fontSize: 15, fontWeight: '900', color: '#111' },
+  challengesSubtitle: { fontSize: 12, color: '#8a7a6f', marginTop: 2, lineHeight: 16 },
   collectionScroll: {
     paddingHorizontal: 14,
     paddingRight: 26,

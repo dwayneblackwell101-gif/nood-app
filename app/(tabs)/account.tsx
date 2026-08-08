@@ -21,6 +21,7 @@ import { useHistoryEvents } from '../../context/HistoryContext';
 import { useUser } from '../../context/UserContext';
 
 import NoodSpinner from '../../components/NoodSpinner';
+import { RecentlyViewedRail } from '../../components/RecentlyViewedRail';
 import * as WebBrowser from 'expo-web-browser';
 import { logAuthRestartCheck } from '../../utils/auth-restart-debug';
 import { isAppBootstrapComplete } from '../../utils/app-bootstrap';
@@ -972,6 +973,30 @@ export default function AccountScreen() {
             <Text style={styles.infoLinkText}>View in Deals</Text>
           </TouchableOpacity>
         ) : null}
+
+        <RecentlyViewedRail
+          profileId={profileId || ''}
+          isSignedIn={isSignedIn}
+          enrichFrom={Object.fromEntries(
+            recommendedProducts.map((item) => [
+              item.handle,
+              {
+                image: item.image,
+                price: displayMoney(item.priceAmount, item.currencyCode),
+                title: item.title,
+              },
+            ])
+          )}
+          formatPrice={(item) =>
+            displayMoney(Number((item as any)?.priceAmount || 0), (item as any)?.currencyCode || 'USD')
+          }
+          onOpenProduct={(handle) =>
+            router.push({
+              pathname: '/product/[handle]',
+              params: { handle } as any,
+            })
+          }
+        />
 
         <View style={styles.productsSection}>
           <View style={styles.productsHeader}>

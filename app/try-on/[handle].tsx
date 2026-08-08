@@ -24,7 +24,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import FallbackOverlay from '../../components/try-on/FallbackOverlay';
 import ARTryOnScene from './ARTryOnScene';
 import { fetchShopifyProductDetail } from '../../utils/shopify-catalog';
-import { resolveARMode, type ARMode, type ProductMetadata } from './ProductTypeResolver';
+import { resolveARMode, type ARMode, type ProductMetadata } from '../../components/try-on/ProductTypeResolver';
 
 interface ProductData {
   handle: string;
@@ -45,31 +45,28 @@ export default function TryOnScreen() {
   const [product, setProduct] = useState<Partial<ProductData> | null>(null);
   const [productImage, setProductImage] = useState<string | null>(null);
   const [arMode, setArMode] = useState<ARMode>('fallback-overlay');
-  const [useAR, setUseAR] = useState(false);
-  const [showFallbackMessage, setShowFallbackMessage] = useState(false);
+  const [useARMode, setUseARMode] = useState<'ar' | 'fallback'>('ar');
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loadingProduct, setLoadingProduct] = useState(true);
-  const [useARMode, setUseARMode] = useState<'ar' | 'fallback'>('ar');
-
-  const router = useRouter();
+  const [showFallbackMessage, setShowFallbackMessage] = useState(false);
 
   useEffect(() => {
     if (!handle) return;
     setLoadingProduct(true);
     fetchShopifyProductDetail(handle).then((result) => {
-      const product = result?.productByHandle;
-      if (product) {
-        setProduct(product as ProductMetadata);
+      const productData = result?.productByHandle as any;
+      if (productData) {
+        setProduct(productData as ProductMetadata);
         // Extract primary product image
-        if (product?.featuredImage?.url) {
-          setProductImage(product.featuredImage.url);
-        } else if (product?.images?.edges?.[0]?.node?.url) {
-          setProductImage(product.images.edges[0].node.url);
+        if (productData?.featuredImage?.url) {
+          setProductImage(productData.featuredImage.url);
+        } else if (productData?.images?.edges?.[0]?.node?.url) {
+          setProductImage(productData.images.edges[0].node.url);
         }
 
         // Determine AR mode from product metadata
-        const mode = resolveARMode(product as ProductMetadata);
+        const mode = resolveARMode(productData as ProductMetadata);
         setArMode(mode);
       } else {
         setArMode('fallback-overlay');
@@ -84,11 +81,27 @@ export default function TryOnScreen() {
     }
   }, [permission]);
 
-  const handleCapture = async () => {
-    // Only works in fallback mode since AR capture is handled in ViroReact
+  // Show fallback message for 3 seconds when using fallback mode
+  useEffect(() => {
     if (useARMode === 'fallback') {
-      // Fallback mode uses CameraView capture
-      // For AR mode, capture is handled in ViroReact
+      setShowFallbackMessage(true);
+      setTimeout(() => setShowFallbackMessage(false), 3000);
+    }
+  }, [useARMode]);
+
+  const handleCapture = async () => {
+    if (cameraRef.current) {
+      try {
+        const uri = await cameraRef.current.takePictureAsync({
+          quality: 0.9,
+          base64: false,
+        });
+        if (uri?.uri) {
+          setCapturedUri(uri.uri);
+        }
+      } catch (e) {
+        console.error('Capture failed:', e);
+      }
     }
   };
 
@@ -115,14 +128,6 @@ export default function TryOnScreen() {
   const handleBack = () => {
     router.back();
   };
-
-  // Show fallback message for 3 seconds when using fallback mode
-  useEffect(() => {
-    if (useARMode === 'fallback') {
-      setShowFallbackMessage(true);
-      setTimeout(() => setShowFallbackMessage(false), 3000);
-    }
-  }, [useARMode]);
 
   if (!permission) {
     return (
@@ -154,10 +159,6 @@ export default function TryOnScreen() {
     );
   }
 
-  // Determine if AR is available (not in Expo Go, has ViroReact)
-  const isARAvailable = __DEV__ && typeof require !== 'undefined';
-  // In production, we'd check for ViroReact native module existence
-
   const renderTryOn = () => {
     if (useARMode === 'ar') {
       return (
@@ -171,7 +172,7 @@ export default function TryOnScreen() {
             productType: product?.productType,
             tags: product?.tags,
             collections: product?.collections,
-          }
+          }}
           arMode={arMode}
           onClose={() => setUseARMode('fallback')}
           onCapture={(uri) => setCapturedUri(uri)}
@@ -214,7 +215,7 @@ export default function TryOnScreen() {
             <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
           <View style={styles.bottomBar}>
-            <TouchableOpacity style={styles.captureButton} onPress={capturePhoto}>
+            <TouchableOpacity style={styles.captureButton} onPress={handleCapture}>
               <View style={styles.captureButtonInner} />
             </TouchableOpacity>
           </View>
@@ -256,6 +257,7 @@ export default function TryOnScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1 },
   camera: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
   loadingText: { color: '#fff', fontSize: 16 },
@@ -306,55 +308,4 @@ const styles = StyleSheet.create({
     borderColor: '#ff6a00',
     minWidth: 70,
   },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
-  loadingText: { color: '#fff', fontSize: 16 },
-  permText: { color: '#ccc', fontSize: 14, marginTop: 12, textAlign: 'center', paddingHorizontal: 40 },
-  permButton: { marginTop: 16, backgroundColor: '#ff6a00', paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20 },
-  permButtonText: { color: '#fff', fontWeight: '700' },
-  backButton: {
-    position: 'absolute', top: 50, left: 16, zIndex: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20, padding: 8,
-  },
-  bottomBar: {
-    position: 'absolute', bottom: 40, left: 0, right: 0,
-    flexDirection: 'row', justifyContent: 'center', gap: 24, zIndex: 20,
-  },
-  captureButton: {
-    width: 72, height: 72, borderRadius: 36, borderWidth: 4, borderColor: '#fff',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  captureButtonInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff' },
-  retakeButton: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20,
-  },
-  retakeText: { color: '#fff', fontWeight: '600' },
-  saveButton: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#ff6a00', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20,
-  },
-  saveText: { color: '#fff', fontWeight: '700' },
-  instructions: {
-    position: 'absolute', bottom: 130, left: 0, right: 0, alignItems: 'center', zIndex: 20,
-  },
-  instructionsText: { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
-  modeToggle: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 12,
-    marginTop: 8,
-    paddingHorizontal: 16,
-  },
-  modeButton: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#ff6a00',
-    minWidth: 70,
-  },
 });
-
-export default TryOnScreen;

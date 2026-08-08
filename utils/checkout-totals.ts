@@ -81,19 +81,23 @@ export function calculateCheckoutSubtotal(
 export function buildCheckoutTotals(
   cartItems: any[] = [],
   convertPrice: (amount: number, from: string, to: string) => number,
-  currency = SHOPIFY_CHECKOUT_CURRENCY
+  currency = SHOPIFY_CHECKOUT_CURRENCY,
+  discountOverride = 0
 ): CheckoutTotals {
   const cartLines = buildCheckoutCartLines(cartItems, convertPrice, currency);
   const subtotal = roundMoney(
     cartLines.reduce((sum, line) => sum + Number(line.price || 0) * Number(line.quantity || 0), 0)
   );
 
+  const discount = roundMoney(Math.min(Math.max(0, Number(discountOverride) || 0), subtotal));
+  const total = roundMoney(Math.max(0, subtotal - discount));
+
   return {
     currency,
     subtotal,
     shipping: CHECKOUT_SHIPPING,
-    discount: CHECKOUT_DISCOUNT,
-    total: subtotal,
+    discount,
+    total,
     cartLines,
   };
 }

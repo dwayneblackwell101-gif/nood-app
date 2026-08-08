@@ -1,29 +1,9 @@
-import { Link } from 'expo-router';
-import { StyleSheet } from 'react-native';
+import FlashSaleHubScreen from './flash-sale';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-
+/**
+ * The `/modal` route now hosts the Flash Sale hub.
+ * (Previously a placeholder "This is a modal" screen.)
+ */
 export default function ModalScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <ThemedText type="title">This is a modal</ThemedText>
-      <Link href="/" dismissTo style={styles.link}>
-        <ThemedText type="link">Go to home screen</ThemedText>
-      </Link>
-    </ThemedView>
-  );
+  return <FlashSaleHubScreen />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  link: {
-    marginTop: 15,
-    paddingVertical: 15,
-  },
-});

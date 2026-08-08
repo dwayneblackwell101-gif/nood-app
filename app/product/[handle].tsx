@@ -27,6 +27,14 @@ import { useCart } from '../../context/CartContext';
 import { useUser } from '../../context/UserContext';
 import NoodSpinner from '../../components/NoodSpinner';
 import ZoomableImage from '../../components/ZoomableImage';
+import { StarRating } from '../../components/StarRating';
+import { DealCountdownBanner } from '../../components/DealCountdownBanner';
+import {
+  addBackInStockRequest,
+  hasBackInStockRequest,
+  removeBackInStockRequest,
+  resolveBackInStockRequests,
+} from '../../utils/back-in-stock';
 import { useScreenPerfReporter } from '../../utils/screen-perf';
 import { ACCOUNT_SIGN_IN_GATE_DISABLED } from '../../components/RequireSignIn';
 import { BASE_CURRENCY, normalizeCatalogCurrencyCode } from '../../utils/currency';
@@ -76,6 +84,7 @@ import {
 } from '../../utils/product-variant-images';
 import { noodAlert } from '../../utils/nood-alert';
 import { recordProductView } from '../../utils/recommendation-signals';
+import { recordQuestProgress } from '../../utils/quest-engine';
 import {
   logSwatchImageQuality,
   logSwatchUiQuality,
@@ -503,10 +512,19 @@ export default function ProductScreen() {
   const [showVariantPicker, setShowVariantPicker] = useState(false);
   const [selectedOptionsMap, setSelectedOptionsMap] = useState<VariantOptionMap>({});
 
-  const [reviews] = useState<any[]>([]);
+  // Image gallery skeleton/fade state
+  const [galleryImagesReady, setGalleryImagesReady] = useState(false);
+  const [gallerySkeletonVisible, setGallerySkeletonVisible] = useState(true);
+  const gallerySkeletonTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const galleryReadyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasShownRealImagesRef = useRef(false);
+  const prevGalleryLengthRef = useRef(0);
+
+  const [reviews, setReviews] = useState<any[]>([]);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [newReviewText, setNewReviewText] = useState('');
   const [newReviewRating, setNewReviewRating] = useState(5);
+  const [notifyRequested, setNotifyRequested] = useState(false);
   const handleBackPress = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
@@ -645,11 +663,39 @@ export default function ProductScreen() {
   useEffect(() => {
     if (typeof handle === 'string' && handle.trim()) {
       fetchJudgeMeWidget(handle);
+
+      // Load stored customer reviews for this product (from account reviews).
+      const loadStoredReviews = async () => {
+        try {
+          const keys: string[] = [];
+          if (profileId) keys.push(getReviewsStorageKey(profileId));
+          const collected: any[] = [];
+          for (const key of keys) {
+            const raw = await AsyncStorage.getItem(key);
+            if (!raw) continue;
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) continue;
+            for (const review of parsed) {
+              if (review?.handle === handle && review?.rating) {
+                collected.push(review);
+              }
+            }
+          }
+          setReviews((prev) => {
+            const seen = new Set(prev.map((r) => r?.id || `${r?.orderItemId}`));
+            const fresh = collected.filter((r) => !seen.has(r?.id || `${r?.orderItemId}`));
+            return fresh.length ? [...prev, ...fresh] : prev;
+          });
+        } catch {
+          // non-fatal
+        }
+      };
+      void loadStoredReviews();
       return;
     }
 
     setJudgeMeWidgetHtml('');
-  }, [handle]);
+  }, [handle, profileId]);
 
   useEffect(() => {
     if (!showPromoBar) {
@@ -1001,6 +1047,80 @@ export default function ProductScreen() {
       PRODUCT_IMAGE_PLACEHOLDER
     );
   }, [currentIndex, gallery, product, selectedVariant]);
+
+  // Gallery readiness detection - tracks when we have "reasonably complete" images
+  useEffect(() => {
+    if (!product) {
+      setGalleryImagesReady(false);
+      setGallerySkeletonVisible(true);
+      hasShownRealImagesRef.current = false;
+      return;
+    }
+
+    const baseImageCount = (product?.images?.edges?.length || 0) + (product?.media?.edges?.length || 0);
+    const variantImageCount = countVariantImageUrls(product);
+    const totalGalleryImages = gallery.length;
+
+    // "Reasonably complete" = has base images (media/images edges) OR at least 3 total gallery images
+    // This covers backend-cache stage (has real gallery images) before variant enrichment
+    const isReasonablyComplete = baseImageCount >= 2 || totalGalleryImages >= 3;
+    const hasAnyImages = totalGalleryImages > 0;
+
+    // Clear any existing timers
+    if (galleryReadyTimerRef.current) {
+      clearTimeout(galleryReadyTimerRef.current);
+    }
+    if (gallerySkeletonTimeoutRef.current) {
+      clearTimeout(gallerySkeletonTimeoutRef.current);
+    }
+
+    // If we have reasonably complete images, mark as ready
+    if (isReasonablyComplete && hasAnyImages) {
+      galleryReadyTimerRef.current = setTimeout(() => {
+        if (!hasShownRealImagesRef.current) {
+          hasShownRealImagesRef.current = true;
+          setGalleryImagesReady(true);
+        }
+        // Fade out skeleton after a brief moment
+        setTimeout(() => setGallerySkeletonVisible(false), 120);
+      }, 0);
+      return;
+    }
+
+    // If we have some images but not "reasonably complete", start the skeleton timeout
+    // After ~1000ms, show whatever we have rather than indefinite skeleton
+    if (hasAnyImages && !hasShownRealImagesRef.current) {
+      gallerySkeletonTimeoutRef.current = setTimeout(() => {
+        hasShownRealImagesRef.current = true;
+        setGalleryImagesReady(true);
+        setTimeout(() => setGallerySkeletonVisible(false), 120);
+      }, 1000);
+    } else if (!hasAnyImages) {
+      // No images at all - don't show skeleton indefinitely
+      setGalleryImagesReady(true);
+      setGallerySkeletonVisible(false);
+    }
+  }, [gallery, product]);
+
+  // Track gallery length changes for cross-fade when new variant images arrive
+  useEffect(() => {
+    if (gallery.length > prevGalleryLengthRef.current && prevGalleryLengthRef.current > 0) {
+      // New images arrived - they'll cross-fade naturally via key changes
+      console.log('[GALLERY] New images arrived, cross-fading', {
+        old: prevGalleryLengthRef.current,
+        new: gallery.length
+      });
+    }
+    prevGalleryLengthRef.current = gallery.length;
+  }, [gallery.length]);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (galleryReadyTimerRef.current) clearTimeout(galleryReadyTimerRef.current);
+      if (gallerySkeletonTimeoutRef.current) clearTimeout(gallerySkeletonTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (openedReviewFromRouteRef.current || !product || openReview !== '1') return;
@@ -1381,6 +1501,24 @@ export default function ProductScreen() {
     logProductStockState(product, 'detail', { selectedVariant });
   }, [product, selectedVariant]);
 
+  // Back-in-stock notifications: when the product is in stock, resolve any
+  // pending notify requests; when sold out, reflect the request state.
+  useEffect(() => {
+    if (!product || typeof handle !== 'string') return;
+
+    const variantId = selectedVariant?.id ? String(selectedVariant.id) : undefined;
+
+    if (!productSoldOut) {
+      void resolveBackInStockRequests({
+        handle,
+        title: String(product.title || 'Product'),
+        variantId,
+        inStock: true,
+      });
+    }
+    void hasBackInStockRequest(handle, variantId).then(setNotifyRequested);
+  }, [handle, product, productSoldOut, selectedVariant?.id]);
+
   const priceText = useMemo(() => {
     if (selectedVariant?.price?.amount) {
       return formatDisplayPrice(
@@ -1416,10 +1554,28 @@ export default function ProductScreen() {
   }, [product]);
 
   const reviewAverage = useMemo(() => {
-    if (!reviews.length) return '0.0';
-    const total = reviews.reduce((sum, r) => sum + r.rating, 0);
-    return (total / reviews.length).toFixed(1);
-  }, [reviews]);
+    const storedTotal = reviews.reduce((sum, r) => sum + (Number(r.rating) || 0), 0);
+    const storedCount = reviews.length;
+
+    // Try to parse a rating from the Judge.me widget HTML (e.g. 4.8 out of 5).
+    let widgetAverage = 0;
+    let widgetCount = 0;
+    if (judgeMeWidgetHtml) {
+      const scoreMatch = judgeMeWidgetHtml.match(/<span[^>]*class="[^"]*jdgm-rev-widg__summary-text[^"]*"[^>]*>\s*([\d.]+)\s*\/\s*5/i) ||
+        judgeMeWidgetHtml.match(/([\d.]+)\s*\/\s*5/);
+      if (scoreMatch) widgetAverage = Number(scoreMatch[1]) || 0;
+
+      const countMatch = judgeMeWidgetHtml.match(/<span[^>]*class="[^"]*jdgm-rev-widg__summary-count[^"]*"[^>]*>\s*(\d+)/i) ||
+        judgeMeWidgetHtml.match(/(\d+)\s*reviews?/i);
+      if (countMatch) widgetCount = Number(countMatch[1]) || 0;
+    }
+
+    const combinedCount = storedCount + widgetCount;
+    if (!combinedCount) return '0.0';
+
+    const combinedAverage = (storedTotal + widgetAverage * widgetCount) / combinedCount;
+    return combinedAverage.toFixed(1);
+  }, [judgeMeWidgetHtml, reviews]);
 
   const handleAddToCart = () => {
     if (!product) return;
@@ -1428,7 +1584,36 @@ export default function ProductScreen() {
       return;
     }
     if (!selectedVariant) return;
+    // If there's nothing meaningful to choose (single variant, or every
+    // option group has exactly one value), add straight to cart instead of
+    // showing a redundant picker sheet with a second "Add now" button.
+    const hasRealChoice =
+      variantNodes.length > 1 &&
+      optionGroups.some((group) => group.values.length > 1);
+    if (!hasRealChoice) {
+      confirmAddToCart();
+      return;
+    }
     setShowVariantPicker(true);
+  };
+
+  const handleNotifyMe = async () => {
+    if (!product || typeof handle !== 'string') return;
+
+    if (notifyRequested) {
+      await removeBackInStockRequest(handle, selectedVariant?.id ? String(selectedVariant.id) : undefined);
+      setNotifyRequested(false);
+      noodAlert('Reminder cancelled', "We won't notify you about this item anymore.");
+      return;
+    }
+
+    await addBackInStockRequest({
+      handle,
+      title: String(product.title || 'Product'),
+      variantId: selectedVariant?.id ? String(selectedVariant.id) : undefined,
+    });
+    setNotifyRequested(true);
+    noodAlert('You’re on the list', 'We’ll send you a notification when this item is back in stock.');
   };
 
   const confirmAddToCart = () => {
@@ -1738,6 +1923,16 @@ export default function ProductScreen() {
 
         await AsyncStorage.setItem(storageKey, JSON.stringify(nextReviews));
         DeviceEventEmitter.emit('customerReviewSubmitted', nextReview);
+
+        // Review Quest: photo review submitted → earn locked credit
+        if (reviewImage && isSignedIn && profileId) {
+          void recordQuestProgress(
+            { profileId, isSignedIn },
+            'review-1-photo',
+            `review:${reviewOrderId}:${reviewItemId}`
+          );
+        }
+
         setShowReviewModal(false);
         setNewReviewText('');
         setNewReviewRating(5);
@@ -1836,40 +2031,71 @@ export default function ProductScreen() {
         onScroll={onVerticalScroll}
         scrollEventThrottle={16}
       >
-        <FlatList
-          ref={galleryScrollRef}
-          data={gallery}
-          keyExtractor={(item) => `gallery-${item.id}`}
-          renderItem={renderGalleryItem}
-          horizontal
-          pagingEnabled
-          directionalLockEnabled
-          nestedScrollEnabled
-          style={styles.galleryCarousel}
-          showsHorizontalScrollIndicator={false}
-          scrollEventThrottle={16}
-          initialNumToRender={1}
-          maxToRenderPerBatch={2}
-          windowSize={3}
-          removeClippedSubviews
-          getItemLayout={(_data, index) => ({
-            length: width,
-            offset: width * index,
-            index,
-          })}
-          onMomentumScrollEnd={(event) => {
-            updateGalleryIndex(event.nativeEvent.contentOffset.x);
-          }}
-        />
-
-        <View style={styles.dots}>
-          {gallery.map((item: any, i: number) => (
-            <View
-              key={`dot-${item.id}`}
-              style={[styles.dot, i === currentIndex && styles.activeDot]}
+        {/* Gallery with skeleton loading */}
+        <View style={styles.galleryCarousel}>
+          {gallerySkeletonVisible && gallery.length === 0 ? (
+            // No images at all yet - show skeleton placeholders
+            <View style={styles.gallerySkeletonContainer}>
+              {Array.from({ length: 3 }).map((_, i) => (
+                <View key={`skeleton-${i}`} style={styles.gallerySkeletonSlide}>
+                  <View style={styles.gallerySkeletonImage} />
+                </View>
+              ))}
+            </View>
+          ) : (
+            // Has images or skeleton should hide - render FlatList with cross-fade
+            <FlatList
+              ref={galleryScrollRef}
+              data={gallery}
+              keyExtractor={(item) => `gallery-${item.id}`}
+              renderItem={renderGalleryItem}
+              horizontal
+              pagingEnabled
+              directionalLockEnabled
+              nestedScrollEnabled
+              style={styles.galleryCarousel}
+              showsHorizontalScrollIndicator={false}
+              scrollEventThrottle={16}
+              initialNumToRender={1}
+              maxToRenderPerBatch={2}
+              windowSize={3}
+              removeClippedSubviews
+              getItemLayout={(_data, index) => ({
+                length: width,
+                offset: width * index,
+                index,
+              })}
+              onMomentumScrollEnd={(event) => {
+                updateGalleryIndex(event.nativeEvent.contentOffset.x);
+              }}
+              ListEmptyComponent={
+                gallerySkeletonVisible ? (
+                  <View style={styles.gallerySkeletonContainer}>
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <View key={`skeleton-${i}`} style={styles.gallerySkeletonSlide}>
+                        <View style={styles.gallerySkeletonImage} />
+                      </View>
+                    ))}
+                  </View>
+                ) : null
+              }
             />
-          ))}
+          )}
+
+          {/* Gallery dots - only show when real images are rendered */}
+          {!gallerySkeletonVisible && gallery.length > 1 && (
+            <View style={styles.dots}>
+              {gallery.map((item: any, i: number) => (
+                <View
+                  key={`dot-${item.id}`}
+                  style={[styles.dot, i === currentIndex && styles.activeDot]}
+                />
+              ))}
+            </View>
+          )}
         </View>
+
+        <DealCountdownBanner />
 
         <View style={styles.perksStrip}>
           <View style={styles.perkItem}>
@@ -1991,7 +2217,10 @@ export default function ProductScreen() {
           <View style={styles.reviewSummaryBar}>
             <View style={styles.reviewSummaryLeft}>
               <Text style={styles.reviewSummaryScore}>{reviewAverage}</Text>
-              <Text style={styles.reviewSummaryStars}>★★★★★</Text>
+              <StarRating
+                average={Number(reviewAverage) || 0}
+                count={judgeMeWidgetHtml ? undefined : reviews.length}
+              />
               <Text style={styles.reviewSummaryCount}>
                 ({judgeMeWidgetHtml ? 'Live' : reviews.length})
               </Text>
@@ -2202,19 +2431,40 @@ export default function ProductScreen() {
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity
-          style={[styles.bottomAddButton, productSoldOut && styles.bottomActionDisabled]}
-          onPress={handleAddToCart}
-          disabled={productSoldOut}
-          activeOpacity={productSoldOut ? 1 : 0.85}
-        >
-          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={styles.bottomAddText}>
-            {productSoldOut ? 'Sold out' : 'Add to cart'}
-          </Text>
-          <Text style={styles.bottomSubText}>
-            {productSoldOut ? 'Unavailable' : 'Quick action'}
-          </Text>
-        </TouchableOpacity>
+        {productSoldOut ? (
+          <TouchableOpacity
+            style={[styles.bottomAddButton, notifyRequested && styles.notifyButtonActive]}
+            onPress={() => void handleNotifyMe()}
+            activeOpacity={0.85}
+          >
+            <Ionicons
+              name={notifyRequested ? 'checkmark-circle' : 'notifications-outline'}
+              size={18}
+              color={notifyRequested ? '#ff6a00' : '#fff'}
+              style={{ marginRight: 6 }}
+            />
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={styles.bottomAddText}>
+              {notifyRequested ? 'Reminder set' : 'Notify me'}
+            </Text>
+            <Text style={styles.bottomSubText}>
+              {notifyRequested ? 'Tap to cancel' : 'When back in stock'}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.bottomAddButton, productSoldOut && styles.bottomActionDisabled]}
+            onPress={handleAddToCart}
+            disabled={productSoldOut}
+            activeOpacity={productSoldOut ? 1 : 0.85}
+          >
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82} style={styles.bottomAddText}>
+              {productSoldOut ? 'Sold out' : 'Add to cart'}
+            </Text>
+            <Text style={styles.bottomSubText}>
+              {productSoldOut ? 'Unavailable' : 'Quick action'}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         <Animated.View
           style={[
@@ -3184,6 +3434,10 @@ const styles = StyleSheet.create({
   bottomActionDisabled: {
     opacity: 0.55,
   },
+  notifyButtonActive: {
+    backgroundColor: '#fff0e0',
+    borderColor: '#ff6a00',
+  },
   bottomAddButton: {
     flex: 1,
     minWidth: 0,
@@ -3515,5 +3769,24 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '800',
+  },
+  // Gallery skeleton loading styles
+  gallerySkeletonContainer: {
+    flexDirection: 'row',
+    height: '100%',
+    width: '100%',
+  },
+  gallerySkeletonSlide: {
+    width,
+    height: width * 1.14,
+    backgroundColor: COLORS.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gallerySkeletonImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#e8e4de',
+    opacity: 0.6,
   },
 });

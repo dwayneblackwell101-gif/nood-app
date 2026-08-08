@@ -32,10 +32,12 @@ import {
   isAppBootstrapComplete,
   markAppBootstrapComplete,
 } from '../utils/app-bootstrap';
+import { armDailyReminder } from '../utils/daily-reward-reminder';
 import { logAuthRestartCheck, logRootLayoutMounted } from '../utils/auth-restart-debug';
 import { logBackendStartup } from '../utils/backend';
 import { logDevRuntimeParity } from '../utils/dev-runtime';
 import { isKeepAwakeActivationError } from '../utils/keep-awake-errors';
+import { logNativeSplashConfigChecked } from '../utils/splash';
 import {
   canUseRemotePushNotifications,
   configureNotificationPresentation,
@@ -47,7 +49,6 @@ import NoodBouncingLogo from '../components/NoodBouncingLogo';
 import RewardInviteDeepLinkListener from '../components/RewardInviteDeepLinkListener';
 import RewardPopupHost from '../components/RewardPopupHost';
 import ShopifyAuthDeepLinkListener from '../components/ShopifyAuthDeepLinkListener';
-import { logNativeSplashConfigChecked } from '../utils/splash';
 
 const webShadow = (value: string) => (Platform.OS === 'web' ? { boxShadow: value } : {});
 const platformShadow = (webValue: string, nativeValue: object) =>
@@ -139,11 +140,28 @@ function RootLayoutInner() {
   }, [bootstrapAlreadyComplete]);
 
   useEffect(() => {
+    if (bootstrapAlreadyComplete) {
+      setSplashMinElapsed(true);
+      return;
+    }
+
+    const timer = setTimeout(() => setSplashMinElapsed(true), SPLASH_MIN_VISIBLE_MS);
+    return () => clearTimeout(timer);
+  }, [bootstrapAlreadyComplete]);
+
+  useEffect(() => {
     if (iconsReady && splashMinElapsed) {
       markAppBootstrapComplete();
       setNotificationFlowFinished(true);
+
+      // Arm the daily reward reminder (fires once per day if enabled).
+      void armDailyReminder();
+
+      // Re-register the push token on every launch so the backend always has
+      // the latest device token (even if an earlier registration failed).
+      void ensurePushTokenRegistered(profileId || '').catch(() => {});
     }
-  }, [iconsReady, splashMinElapsed]);
+  }, [iconsReady, splashMinElapsed, profileId]);
 
   useEffect(() => {
     const previousUnhandledRejection = (globalThis as any).onunhandledrejection;

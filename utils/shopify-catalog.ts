@@ -48,6 +48,96 @@ const PRODUCT_LIST_FRAGMENT = `
   }
 `;
 
+/**
+ * LIGHTWEIGHT list fragment — used by grid queries (home feed, categories,
+ * collections, deals). Omits heavy fields (full description, media, all
+ * variants) that grids don't render, cutting the Storefront payload
+ * dramatically → faster first paint.
+ *
+ * Keeps everything the grid card needs: image, price, discount, availability.
+ */
+const PRODUCT_GRID_FRAGMENT = `
+  id
+  title
+  handle
+  vendor
+  productType
+  tags
+  availableForSale
+  featuredImage { url altText }
+  images(first: 4) { edges { node { url altText width height } } }
+  priceRange { minVariantPrice { amount currencyCode } maxVariantPrice { amount currencyCode } }
+  compareAtPriceRange { maxVariantPrice { amount currencyCode } }
+  variants(first: 4) {
+    edges {
+      node {
+        id title availableForSale quantityAvailable currentlyNotInStock
+        price { amount currencyCode }
+        image { url altText }
+        selectedOptions { name value }
+      }
+    }
+  }
+  collections(first: 5) { edges { node { handle title } } }
+`;
+
+/**
+ * Fetch a list of products using the LIGHT grid fragment.
+ * Much faster than the full fragment for grids.
+ */
+export async function fetchShopifyGridProducts(params: {
+  first?: number;
+  after?: string | null;
+  sortKey?: string;
+  query?: string;
+}): Promise<any> {
+  const first = Math.min(Math.max(1, params.first || 50), 250);
+  const variables: Record<string, unknown> = { first };
+  if (params.after) variables.after = params.after;
+  if (params.sortKey) variables.sortKey = params.sortKey;
+  if (params.query) variables.query = params.query;
+
+  const query = `
+    query StorefrontGridProducts($first: Int!, $after: String, $sortKey: ProductSortKeys, $query: String) {
+      products(first: $first, after: $after, sortKey: $sortKey, reverse: true, query: $query) {
+        edges { node { ${PRODUCT_GRID_FRAGMENT} } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  `;
+
+  const response = await shopifyStorefrontGraphql(query, variables);
+  return response?.data?.products || null;
+}
+
+/**
+ * Fetch collection products using the LIGHT grid fragment.
+ */
+export async function fetchShopifyCollectionGridProducts(
+  handle: string,
+  params: { first?: number; after?: string | null } = {}
+): Promise<any> {
+  const first = Math.min(Math.max(1, params.first || 50), 250);
+  const variables: Record<string, unknown> = { handle, first };
+  if (params.after) variables.after = params.after;
+
+  const query = `
+    query StorefrontCollectionGridProducts($handle: String!, $first: Int!, $after: String) {
+      collectionByHandle(handle: $handle) {
+        title
+        handle
+        products(first: $first, after: $after) {
+          edges { node { ${PRODUCT_GRID_FRAGMENT} } }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+  `;
+
+  const response = await shopifyStorefrontGraphql(query, variables);
+  return response?.data?.collectionByHandle || null;
+}
+
 const PRODUCT_DETAIL_FRAGMENT = `
   id
   title
@@ -124,14 +214,37 @@ export interface ShopifyListParams {
   query?: string;
 }
 
-export interface ShopifyListResult {
-  edges: Array<{ node: Record<string, unknown> }>;
-  pageInfo: { hasNextPage: boolean; endCursor: string | null };
+export interface ShopifyProductEdge {
+  node: Record<string, unknown>;
+}
+
+export interface ShopifyPageInfo {
+  hasNextPage: boolean;
+  endCursor: string | null;
+}
+
+export interface ShopifyProductsConnection {
+  edges: ShopifyProductEdge[];
+  pageInfo: ShopifyPageInfo;
+}
+
+export interface ShopifyCollectionProducts {
+  products: ShopifyProductsConnection;
+}
+
+export interface ShopifyCollectionByHandle {
+  title: string;
+  handle: string;
+  products: ShopifyProductsConnection;
+}
+
+export interface ShopifyCollectionProductsResult {
+  collectionByHandle: ShopifyCollectionByHandle | null;
 }
 
 export async function fetchShopifyProductList(
   params: ShopifyListParams = {}
-): Promise<{ products: { edges: ShopifyListResult['edges']; pageInfo: ShopifyListResult['pageInfo'] } }> {
+): Promise<{ products: ShopifyProductsConnection }> {
   const first = Math.min(Math.max(1, params.first || SHOPIFY_LIST_PRODUCTS_LIMIT), 250);
   const sortKey = (params.sortKey || 'UPDATED_AT').toUpperCase();
   const variables: Record<string, unknown> = { first, sortKey };
@@ -153,7 +266,7 @@ export async function fetchShopifyProductDetail(
 export async function fetchShopifyCollectionProducts(
   handle: string,
   params: { first?: number; after?: string | null } = {}
-): Promise<{ collectionByHandle: Record<string, unknown> | null }> {
+): Promise<ShopifyCollectionProductsResult> {
   const first = Math.min(Math.max(1, params.first || 50), 250);
   const variables: Record<string, unknown> = { handle, first };
   if (params.after) variables.after = params.after;

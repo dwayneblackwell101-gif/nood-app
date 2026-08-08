@@ -69,6 +69,7 @@ type SearchProduct = {
   collectionHandles?: string[];
   collectionTitles?: string[];
   availableForSale?: boolean;
+  variants?: { edges?: any[] };
 };
 
 type SearchProductsCache = {
@@ -485,10 +486,10 @@ async function fetchBackendSearchProducts(query: string) {
   });
 
   try {
-    const json = await fetchCatalogPath(path, {
+    const json = (await fetchCatalogPath(path, {
       skipLocalCache: true,
       timeoutMs: SEARCH_BACKEND_TIMEOUT_MS,
-    });
+    })) as any;
     const products = mapProducts(json?.data?.products?.edges || []);
     searchPerfLog('[NOOD catalog] search count', products.length);
     searchPerfLog('[NOOD search] backend response count', {
@@ -520,10 +521,10 @@ async function fetchSearchCatalogBootstrap(): Promise<{
     primaryUrl: primaryUrl || '(not set)',
   });
 
-  const json = await fetchCatalogPath(path, {
+  const json = (await fetchCatalogPath(path, {
     skipLocalCache: true,
     timeoutMs: SEARCH_BOOTSTRAP_TIMEOUT_MS,
-  });
+  })) as any;
   const edges = json?.data?.products?.edges || [];
   const products = mapProducts(edges);
   const resolvedUrl = getLastSuccessfulBackendUrl();
@@ -974,7 +975,7 @@ export default function SearchScreen() {
 
     router.push({
       pathname: '/product/[handle]',
-      params: buildProductRouteParams(product, { from: 'search' }),
+      params: buildProductRouteParams(product, { from: 'search' }) as any,
     });
   }, []);
 

@@ -5,6 +5,7 @@ import { useUser } from './UserContext';
 import { useHistoryEvents } from './HistoryContext';
 import { BASE_CURRENCY, convertPrice, ensureExchangeRates, formatMoney } from '../utils/currency';
 import { buildCheckoutTotals, SHOPIFY_CHECKOUT_CURRENCY } from '../utils/checkout-totals';
+import { getActiveCoupons, markCouponUsed, type ClaimedCoupon } from '../utils/coupon-deals';
 import { getCartStorageKey } from '../utils/customer-storage';
 import {
   getCustomerOrders,
@@ -22,6 +23,7 @@ import {
 import { syncCustomerOrdersWithShopify } from '../utils/shopify-orders-sync';
 import { recordCartProduct, recordPurchasedProducts } from '../utils/recommendation-signals';
 import { getPaymentCustomerEmail } from '../utils/customer';
+import { syncCartToBackend } from '../utils/cart-sync';
 import { PAYMENT_TESTING_MODE } from '../utils/payment-testing';
 import { signalScratchInstantTrigger } from '../utils/scratch-prize-popup';
 
@@ -69,7 +71,7 @@ const clearGuestWalletState = () => ({
 });
 
 export const CartProvider = ({ children }: any) => {
-  const { settings, isSignedIn, profileId, isReady: userReady } = useUser();
+  const { settings, isSignedIn, profileId, displayName, isReady: userReady } = useUser();
   const { addHistoryEvent } = useHistoryEvents();
 
   const cartStorageKey = useMemo(
@@ -83,7 +85,9 @@ export const CartProvider = ({ children }: any) => {
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const ordersRef = useRef<CustomerOrder[]>([]);
   const [ordersSyncing, setOrdersSyncing] = useState(false);
+  const [customerEmail, setCustomerEmail] = useState('');
   const [lockedRewards, setLockedRewards] = useState<LockedReward[]>([]);
+  const [activeCoupon, setActiveCoupon] = useState<ClaimedCoupon | null>(null);
   const [loading, setLoading] = useState(true);
   const [ratesVersion, setRatesVersion] = useState(0);
 
@@ -205,6 +209,7 @@ export const CartProvider = ({ children }: any) => {
         if (!customerEmail) {
           return;
         }
+        setCustomerEmail(customerEmail);
 
         const localOrders = baseOrders || ordersRef.current;
         const syncResult = await syncCustomerOrdersWithShopify({
@@ -313,6 +318,9 @@ export const CartProvider = ({ children }: any) => {
           shopifyOrderId: nextOrder.shopifyOrderId,
         });
 
+        // Coupon was applied to this order — consume it so it can't be reused.
+        void consumeActiveCoupon();
+
         void syncOrdersAfterPayment(nextOrders);
         return true;
       } catch (error) {
@@ -320,7 +328,7 @@ export const CartProvider = ({ children }: any) => {
         return false;
       }
     },
-    [applyOrdersState, isSignedIn, profileId, syncOrdersAfterPayment]
+    [applyOrdersState, consumeActiveCoupon, isSignedIn, profileId, syncOrdersAfterPayment]
   );
 
   const refreshLockedRewards = useCallback(() => {
@@ -504,7 +512,20 @@ export const CartProvider = ({ children }: any) => {
     if (!loading && cartStorageKey) {
       AsyncStorage.setItem(cartStorageKey, JSON.stringify(cartItems));
     }
-  }, [cartItems, cartStorageKey, loading]);
+
+    // Sync cart to backend (debounced) so cart-abandonment recovery can
+    // find real carts. The email is resolved from the first order email if
+    // available; otherwise the cart sync is best-effort with what we have.
+    if (!loading && isSignedIn && profileId) {
+      const knownEmail = String(customerEmail || '').trim();
+      syncCartToBackend({
+        cartItems,
+        email: knownEmail,
+        name: displayName || '',
+        profileId,
+      });
+    }
+  }, [cartItems, cartStorageKey, loading, isSignedIn, profileId, displayName, customerEmail]);
 
   useEffect(() => {
     if (!loading && userReady && isSignedIn && profileId) {
@@ -808,8 +829,53 @@ export const CartProvider = ({ children }: any) => {
       return buildCheckoutTotals([], convertPrice, SHOPIFY_CHECKOUT_CURRENCY);
     }
 
-    return buildCheckoutTotals(cartItems, convertPrice, SHOPIFY_CHECKOUT_CURRENCY);
-  }, [cartItems, convertPrice, ratesVersion]);
+    return buildCheckoutTotals(cartItems, convertPrice, SHOPIFY_CHECKOUT_CURRENCY, activeCouponDiscount);
+  }, [cartItems, convertPrice, ratesVersion, activeCouponDiscount]);
+
+  // Load the best active coupon on cart change / mount.
+  const loadActiveCoupon = useCallback(async () => {
+    try {
+      const active = await getActiveCoupons();
+      // Pick the coupon with the largest discount value (amountOff or %).
+      let best: ClaimedCoupon | null = null;
+      for (const coupon of active) {
+        const subtotal = Number(checkoutTotals?.subtotal || 0);
+        const value =
+          coupon.percentOff != null
+            ? (subtotal * coupon.percentOff) / 100
+            : coupon.amountOff || 0;
+        if (!best || value > (best.percentOff != null ? (subtotal * best.percentOff) / 100 : best.amountOff || 0)) {
+          best = coupon;
+        }
+      }
+      setActiveCoupon(best);
+    } catch {
+      setActiveCoupon(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartItems.length]);
+
+  useEffect(() => {
+    void loadActiveCoupon();
+  }, [loadActiveCoupon, cartItems.length]);
+
+  const activeCouponDiscount = useMemo(() => {
+    if (!activeCoupon) return 0;
+    const subtotal = Number(checkoutTotals?.subtotal || 0);
+    if (activeCoupon.percentOff != null) {
+      return (subtotal * activeCoupon.percentOff) / 100;
+    }
+    return activeCoupon.amountOff || 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCoupon, checkoutTotals?.subtotal]);
+
+  // Mark the coupon used after a successful order.
+  const consumeActiveCoupon = useCallback(async () => {
+    if (activeCoupon) {
+      await markCouponUsed(activeCoupon.id);
+      setActiveCoupon(null);
+    }
+  }, [activeCoupon]);
 
   const cartSubtotalRaw = checkoutTotals.total;
 
@@ -902,6 +968,8 @@ export const CartProvider = ({ children }: any) => {
         cartSubtotal,
         cartSubtotalRaw,
         checkoutTotals,
+        activeCoupon,
+        activeCouponDiscount,
         syncWalletBalanceFromBackend,
         addToCart,
         removeFromCart,

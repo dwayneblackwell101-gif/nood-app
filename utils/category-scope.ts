@@ -106,6 +106,7 @@ const WOMEN_COLLECTION_HANDLES = new Set([
   'jeans-pants',
   'loungwear-pajamas',
   'two-piece-sets',
+  'activewear-gym-sets',
   'swimwear',
   'bodysuit',
   'underwear',
@@ -126,8 +127,11 @@ const COLLECTION_HANDLE_MAIN_CATEGORY: Record<string, MainCategoryTitle> = {
   clothing: 'Men',
   men: 'Men',
   women: 'Women',
+  'clothing-1': 'Kids',
   'clothing-2': 'Women',
   kids: 'Kids',
+  'kids-shoes': 'Kids',
+  'bags-kids': 'Kids',
   shoes: 'Shoes',
   electronics: 'Electronics',
   accessories: 'Accessories',
@@ -140,6 +144,7 @@ const COLLECTION_HANDLE_MAIN_CATEGORY: Record<string, MainCategoryTitle> = {
   bodysuit: 'Women',
   'loungwear-pajamas': 'Women',
   'two-piece-sets': 'Women',
+  'activewear-gym-sets': 'Women',
   swimwear: 'Women',
   underwear: 'Women',
   sets: 'Women',
@@ -518,8 +523,24 @@ export function getScopedSubcategoryItems(
         return false;
       }
     } else {
+      // Trust the Shopify menu hierarchy. Only drop an item if the
+      // keyword mapping confidently assigns it to a DIFFERENT main category
+      // than the menu parent (e.g. a "Shoes" collection nested under Men).
       const mapped = findMainCategoryForCollection({ title: item.title, handle: item.handle });
-      if (mapped && mapped !== mainTitle) return false;
+      if (mapped && mapped !== mainTitle && isMainCategoryTitle(item.title)) {
+        // Only exclude when the item title itself clearly signals the other
+        // category (avoids dropping Women/Kids subcategories whose titles
+        // don't keyword-match).
+        const titleLower = String(item.title || '').toLowerCase();
+        const mainLower = String(mainTitle || '').toLowerCase();
+        const mainSignal = new Set(['men', 'women', 'kids', 'shoes', 'electronics', 'accessories', 'beauty']);
+        if (mainSignal.has(titleLower)) return false;
+        if (titleLower.includes(mainLower)) return true;
+        // Confident cross-category signal in the item title:
+        if (mapped === 'Shoes' && /\b(shoes?|sneakers?|sandals?|boots?|footwear)\b/.test(titleLower)) {
+          return false;
+        }
+      }
     }
 
     if (mainTitle === 'Men' && item.previewProducts.some((product) => !productBelongsToMainCategory(product, 'Men'))) {

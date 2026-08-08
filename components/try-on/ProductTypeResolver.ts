@@ -27,14 +27,6 @@ export interface ProductMetadata {
   }>;
   featuredImage?: { url?: string };
   images?: { edges: Array<{ node: { url: string; altText?: string } }> };
-  productType?: string;
-  tags?: string[];
-  collections?: Array<{ handle?: string }>;
-  handle: string;
-  title: string;
-  productType?: string;
-  tags?: string[];
-  media?: ProductMetadata['media'];
 }
 
 /**
@@ -130,9 +122,6 @@ export function resolveARMode(product: ProductMetadata): ARMode {
   return 'fallback-overlay';
 }
 
-/**
- * Human-readable description of the AR mode for UI instructions
- */
 export function getARModeDescription(mode: ARMode): string {
   switch (mode) {
     case 'world-placement':
@@ -150,6 +139,3 @@ export function getARModeDescription(mode: ARMode): string {
       return 'Still learning how to visualize this product in full AR. Showing 3D preview instead.';
   }
 }
-
-export type { ARMode, ProductMetadata };
-export { resolveARMode, getARModeDescription };

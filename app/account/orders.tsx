@@ -16,6 +16,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import RequireSignIn from '../../components/RequireSignIn';
+import { OrderTrackingTimeline } from '../../components/OrderTrackingTimeline';
 import { useCart } from '../../context/CartContext';
 import { useHistoryEvents } from '../../context/HistoryContext';
 import { BASE_CURRENCY } from '../../utils/currency';
@@ -468,6 +469,8 @@ function OrdersContent() {
                 <Text style={styles.detailMeta}>Status: {getOrderDisplayStatus(selectedOrder)}</Text>
                 <Text style={styles.detailMeta}>Payment: {selectedOrder.paymentMethod || 'Wallet'}</Text>
                 <Text style={styles.detailTotal}>{displayTotal(selectedOrder)}</Text>
+
+                <OrderTrackingTimeline order={selectedOrder} />
 
                 {(() => {
                   const refundState = getOrderRefundState(selectedOrder);

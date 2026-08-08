@@ -1,4 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  isDailyReminderEnabled,
+  setDailyReminderEnabled,
+} from '../../utils/daily-reward-reminder';
 import {
   Modal,
   SafeAreaView,
@@ -98,6 +102,17 @@ export default function SettingsScreen() {
   const [countryOpen, setCountryOpen] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
+  const [dailyReminderEnabled, setDailyReminderEnabledState] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void isDailyReminderEnabled().then((enabled) => {
+      if (!cancelled) setDailyReminderEnabledState(enabled);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const selectedCountryName = useMemo(() => {
     return (
@@ -206,6 +221,22 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Personalization</Text>
+
+          <TouchableOpacity
+            style={styles.dropdown}
+            onPress={() => router.push('/onboarding/style-dna' as any)}
+          >
+            <View>
+              <Text style={styles.dropdownLabel}>Style DNA</Text>
+              <Text style={styles.dropdownValue}>Tell us your style — we’ll tailor your feed</Text>
+            </View>
+
+            <Ionicons name="chevron-forward" size={22} color="#111" />
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity style={styles.resetBtn} onPress={() => void resetCurrencyToCountryDefault()}>
           <Text style={styles.resetText}>Reset to country default</Text>
         </TouchableOpacity>
@@ -239,6 +270,16 @@ export default function SettingsScreen() {
             value={notificationSettings.shippingAlerts}
             disabled={!notificationSettings.notificationsEnabled}
             onValueChange={(value) => void updateNotificationSetting('shippingAlerts', value)}
+          />
+          <NotificationToggle
+            title="Daily reward reminder"
+            subtitle="A daily nudge to claim your reward and keep your streak."
+            value={dailyReminderEnabled}
+            disabled={!notificationSettings.notificationsEnabled}
+            onValueChange={(value) => {
+              setDailyReminderEnabledState(value);
+              void setDailyReminderEnabled(value);
+            }}
           />
 
           <TouchableOpacity

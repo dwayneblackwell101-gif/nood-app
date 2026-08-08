@@ -444,6 +444,43 @@ export async function resetNotificationPromptForTesting() {
   await configureNotificationPresentation();
 }
 
+/**
+ * Fire a local notification (used by price-drop alerts, back-in-stock,
+ * streak reminders, etc.). No-ops in Expo Go / web where the native
+ * notifications module is unavailable. Requires notification permission.
+ */
+export async function presentLocalNotification(options: {
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+}): Promise<boolean> {
+  if (!isNativePushEnvironment() || isExpoGoRuntime()) return false;
+
+  try {
+    const status = await getNotificationPermissionStatus();
+    if (status !== 'granted') return false;
+
+    const notifications = await loadNotificationsModule();
+    if (!notifications?.default) return false;
+
+    await notifications.default.scheduleNotificationAsync({
+      content: {
+        title: options.title,
+        body: options.body,
+        data: options.data ?? {},
+        sound: 'default',
+      },
+      trigger: null,
+    });
+    return true;
+  } catch (error) {
+    logNotifications('presentLocalNotification failed', {
+      message: String((error as any)?.message || error || ''),
+    });
+    return false;
+  }
+}
+
 if (__DEV__) {
   const globalScope = globalThis as typeof globalThis & {
     resetNotificationPrompt?: () => Promise<void>;

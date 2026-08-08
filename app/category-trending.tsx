@@ -201,7 +201,7 @@ export default function CategoryTrendingScreen() {
       console.log('[NOOD trending] product pressed handle', product.handle);
       router.push({
         pathname: '/product/[handle]',
-        params: buildProductRouteParams(product, { from: 'category-trending' }),
+        params: buildProductRouteParams(product, { from: 'category-trending' }) as any,
       });
     },
     []

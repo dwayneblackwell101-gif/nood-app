@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { Animated, BackHandler, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, memo } from 'react';
+import { BackHandler, StyleSheet, Text, View } from 'react-native';
 import { PlatformPressable } from '@react-navigation/elements';
 import { useNavigationState } from '@react-navigation/native';
 import { Tabs, usePathname, useRouter } from 'expo-router';
@@ -8,28 +8,59 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCart } from '../../context/CartContext';
 import { useWishlist } from '../../context/WishlistContext';
 
-type TabPath = '/' | '/deals' | '/categories' | '/cart' | '/wishlist' | '/account';
+// Reanimated: default export = Animated (with View, Text, Image, etc.)
+import Animated from 'react-native-reanimated';
+// Named worklet exports
+import {
+  useSharedValue,
+  useAnimatedStyle,
+  interpolateColor,
+  interpolate,
+  withRepeat,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 
-function BlinkingDealsIcon({ color, size }: { color: string; size: number }) {
-  const opacity = useRef(new Animated.Value(1)).current;
+const AnimatedIonicons = Animated.createAnimatedComponent(Ionicons);
+
+const RAINBOW_COLORS = ['#ff3b30', '#ff6a00', '#ffcc00', '#34c759', '#007aff', '#af52de'];
+
+const RainbowDealsIcon = memo(function RainbowDealsIcon({ size }: { size: number }) {
+  const colorProgress = useSharedValue(0);
+  const pulseProgress = useSharedValue(0);
 
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.35, duration: 800, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 1, duration: 800, useNativeDriver: true }),
-      ])
+    colorProgress.value = withRepeat(
+      withTiming(RAINBOW_COLORS.length, { duration: RAINBOW_COLORS.length * 1200 }),
+      -1,
+      false
     );
-    loop.start();
-    return () => loop.stop();
-  }, [opacity]);
+
+    pulseProgress.value = withRepeat(
+      withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+  }, []);
+
+  const iconColorStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      colorProgress.value,
+      RAINBOW_COLORS.map((_, i) => i),
+      RAINBOW_COLORS
+    ),
+  }));
+
+  const containerStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(pulseProgress.value, [0, 1], [0.35, 1]),
+  }));
 
   return (
-    <Animated.View style={{ opacity }}>
-      <Ionicons name="pricetag" size={size} color={color} />
+    <Animated.View style={containerStyle}>
+      <AnimatedIonicons name="pricetag" size={size} style={iconColorStyle} />
     </Animated.View>
   );
-}
+});
 
 function isHomeTabPath(pathname: string): boolean {
   return (
@@ -61,94 +92,58 @@ function CartTabIcon({
   );
 }
 
-function getTabPath(pathname: string): TabPath | null {
-  if (isHomeTabPath(pathname)) return '/';
-  if (pathname === '/deals') return '/deals';
-  if (pathname === '/categories') return '/categories';
-  if (pathname === '/cart') return '/cart';
-  if (pathname === '/wishlist') return '/wishlist';
-  if (pathname === '/account') return '/account';
-  return null;
-}
-
-export default function TabLayout() {
+export default function TabsLayout() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const pathname = usePathname();
-  const { cartCount } = useCart();
-  const { wishlistCount } = useWishlist();
-  const cartBadge =
-    cartCount > 0 ? (cartCount > 99 ? '99+' : cartCount) : undefined;
-  const wishlistBadge =
-    wishlistCount > 0 ? (wishlistCount > 99 ? '99+' : wishlistCount) : undefined;
-  const tabHistoryRef = useRef<TabPath[]>([]);
-  const isHomeTabActive = useNavigationState(
-    (state) => state.routes[state.index]?.name === 'index'
-  );
-  const shouldIgnoreHomeTabPress = isHomeTabActive && isHomeTabPath(pathname);
+  const router = useRouter();
+  const { itemCount: cartItemCount } = useCart();
+  const { wishlistCount: wishlistItemCount } = useWishlist();
+  const backButtonRef = useRef(false);
 
-  useEffect(() => {
-    const tabPath = getTabPath(pathname);
-    if (!tabPath) return;
+  const cartBadge = cartItemCount > 0 ? cartItemCount : undefined;
+  const wishlistBadge = wishlistItemCount > 0 ? wishlistItemCount : undefined;
 
-    tabHistoryRef.current = tabHistoryRef.current.filter((path) => path !== tabPath);
-    tabHistoryRef.current.push(tabPath);
-  }, [pathname]);
+  const routes = useNavigationState((state) => state.routes);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      const currentTab = getTabPath(pathname);
-      if (!currentTab) return false;
-
-      const nextHistory = tabHistoryRef.current.filter((path) => path !== currentTab);
-      const previousTab = nextHistory[nextHistory.length - 1];
-
-      if (!previousTab) {
-        return currentTab !== '/';
+      if (routes.length > 1) {
+        router.back();
+        return true;
       }
-
-      tabHistoryRef.current = nextHistory;
-      router.replace(previousTab === '/' ? '/(tabs)' : (`/(tabs)${previousTab}` as any));
-      return true;
+      return false;
     });
-
     return () => subscription.remove();
-  }, [pathname, router]);
+  }, [routes, router]);
 
   return (
     <Tabs
-      backBehavior="none"
-      detachInactiveScreens={false}
       screenOptions={{
         headerShown: false,
-        lazy: true,
-        freezeOnBlur: false,
-        popToTopOnBlur: false,
         tabBarActiveTintColor: '#ff6a00',
-        tabBarInactiveTintColor: '#777',
+        tabBarInactiveTintColor: '#999',
         tabBarStyle: {
-          height: 62 + Math.max(insets.bottom, 8),
-          paddingTop: 8,
-          paddingBottom: Math.max(insets.bottom, 8),
+          backgroundColor: '#fff',
+          borderTopWidth: 0,
+          elevation: 8,
+          shadowColor: '#000',
+          shadowOpacity: 0.08,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: -4 },
+          paddingBottom: insets.bottom,
+          height: 56 + insets.bottom,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
+          fontSize: 10,
+          fontWeight: '700',
+          letterSpacing: 0.2,
         },
       }}
     >
       <Tabs.Screen
         name="index"
-        listeners={{
-          tabPress: (event) => {
-            if (shouldIgnoreHomeTabPress) {
-              event.preventDefault();
-            }
-          },
-        }}
         options={{
-          lazy: false,
-          title: 'Home',
+          title: isHomeTabPath(pathname) ? 'Home' : 'Home',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
@@ -162,8 +157,8 @@ export default function TabLayout() {
         name="deals"
         options={{
           title: 'Deals',
-          tabBarIcon: ({ color, size }) => (
-            <BlinkingDealsIcon color={color} size={size} />
+          tabBarIcon: ({ size }) => (
+            <RainbowDealsIcon size={size} />
           ),
         }}
       />

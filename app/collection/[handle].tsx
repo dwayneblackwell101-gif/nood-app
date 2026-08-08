@@ -105,7 +105,7 @@ type CollectionProduct = {
   variants?: { edges?: any[] };
 };
 
-async function shopifyFetch(query: string, variables?: Record<string, any>) {
+async function shopifyFetch(query: string, variables?: Record<string, any>): Promise<any> {
   return catalogFetch(query, variables);
 }
 
@@ -278,7 +278,15 @@ export default function CollectionScreen() {
   }, [handleBackPress]);
 
   const fetchCollectionPage = useCallback(
-    async (collectionHandle: string, after: string | null = null) => {
+    async (
+      collectionHandle: string,
+      after: string | null = null
+    ): Promise<{
+      title: string;
+      products: CollectionProduct[];
+      endCursor: string | null;
+      hasNextPage: boolean;
+    }> => {
       const json = await shopifyFetch(COLLECTION_PRODUCTS_QUERY, {
         handle: collectionHandle,
         first: COLLECTION_PAGE_SIZE,
@@ -560,7 +568,7 @@ export default function CollectionScreen() {
         pathname: '/product/[handle]',
         params: buildProductRouteParams(item, {
           from: from || 'collection',
-        }),
+        }) as any,
       });
     },
     [from]

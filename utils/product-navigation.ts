@@ -84,7 +84,7 @@ export function productHasRenderableVariants(productData: any) {
 export function buildProductRouteParams(
   item: any,
   extra: Record<string, string> = {}
-): Record<string, string> {
+): Record<string, string | number> {
   const preview = productPreviewFromGridItem(item);
   const handle = preview?.handle || String(item?.handle || '').trim();
   if (handle) {

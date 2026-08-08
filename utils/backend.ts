@@ -568,11 +568,11 @@ export async function fetchBackendJson<T = any>(path: string, options: BackendRe
   );
 }
 
-export async function postBackendJson(
+export async function postBackendJson<T = any>(
   path: string,
   payload: Record<string, any>,
   options: BackendRequestOptions = {}
-) {
+): Promise<T> {
   const timeoutMs = options.timeoutMs ?? 12000;
   const candidates = getBackendCandidates();
   let lastError: any = null;
@@ -640,9 +640,11 @@ export async function postBackendJson(
 
 type GetBackendJsonOptions = BackendRequestOptions & {
   catalog?: boolean;
+  /** Suppress the error log when the request fails (for graceful fallbacks). */
+  quiet?: boolean;
 };
 
-export async function getBackendJson(path: string, options: GetBackendJsonOptions = {}) {
+export async function getBackendJson<T = any>(path: string, options: GetBackendJsonOptions = {}): Promise<T> {
   const timeoutMs = options.timeoutMs ?? 20000;
   const candidates = getBackendCandidates();
   let lastError: any = null;
@@ -769,12 +771,14 @@ export async function getBackendJson(path: string, options: GetBackendJsonOption
   }
 
   const triedUrl = candidates.length ? `${candidates[0]}${path}` : path;
-  if (options.catalog) {
-    console.log(
-      `[NOOD backend] failed GET ${triedUrl}: ${lastError?.message || 'No backend candidates available.'}`
-    );
-  } else {
-    logBackendConnectionFailure('Backend connection failed', candidates, path, lastError);
+  if (!options.quiet) {
+    if (options.catalog) {
+      console.log(
+        `[NOOD backend] failed GET ${triedUrl}: ${lastError?.message || 'No backend candidates available.'}`
+      );
+    } else {
+      logBackendConnectionFailure('Backend connection failed', candidates, path, lastError);
+    }
   }
 
   throw new Error(

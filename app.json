@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "NOOD",
+    "name": "Nood",
     "slug": "nood-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -12,8 +12,6 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.noodcaribbean.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "NOOD uses the camera so you can take a photo and search products by image.",
-        "NSPhotoLibraryUsageDescription": "NOOD uses your photo library so you can choose a profile picture or search products by image.",
         "NSCameraUsageDescription": "NOOD uses the camera for AR try-on and visual product search.",
         "NSPhotoLibraryUsageDescription": "NOOD uses your photo library to save try-on photos and search products by image.",
         "NSPhotoLibraryAddUsageDescription": "NOOD saves your try-on photos to your camera roll.",
@@ -107,8 +105,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "20a1823c-474f-43d7-9b39-aed139d50629"
-      }
+        "projectId": "36b5f555-a445-4e13-943b-47899596b01d"
+      },
+      "devClient": false
     },
     "owner": "noodcaribbean"
   }

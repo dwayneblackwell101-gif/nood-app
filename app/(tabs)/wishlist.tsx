@@ -23,6 +23,7 @@ import { buildProductRouteParams } from '../../utils/product-navigation';
 import { loadWishlistRecommendations } from '../../utils/wishlist-recommendations';
 import { getWishlistItemKey, type WishlistItem } from '../../utils/wishlist-storage';
 import NoodSwipeableRow from '../../components/NoodSwipeableRow';
+import { PriceDropBanner } from '../../components/PriceDropBanner';
 import { CATALOG_LIST_PROPS } from '../../components/catalog/ListPerf';
 import { NOOD_REFRESH_CONTROL_PROPS } from '../../utils/navigation-gestures';
 import { useScreenPerfReporter } from '../../utils/screen-perf';
@@ -491,6 +492,8 @@ export default function WishlistScreen() {
             </View>
           </View>
         </View>
+
+        <PriceDropBanner />
 
         {SIGN_IN_ENABLED && !isSignedIn ? (
           <View style={styles.syncBanner}>

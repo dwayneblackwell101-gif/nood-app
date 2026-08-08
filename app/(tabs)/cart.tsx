@@ -13,6 +13,7 @@ import { Image as ExpoImage } from 'expo-image';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withDelay } from 'react-native-reanimated';
 import { useCart } from '../../context/CartContext';
 import { useWishlist } from '../../context/WishlistContext';
 import { useHistoryEvents } from '../../context/HistoryContext';
@@ -25,6 +26,7 @@ import { resolveCustomerStorageKey } from '../../utils/customer-storage';
 import { buildProductRouteParams } from '../../utils/product-navigation';
 import NoodSpinner from '../../components/NoodSpinner';
 import NoodSwipeableRow from '../../components/NoodSwipeableRow';
+import { FreeShippingProgressBar } from '../../components/FreeShippingProgressBar';
 import { CATALOG_LIST_PROPS } from '../../components/catalog/ListPerf';
 import { NOOD_REFRESH_CONTROL_PROPS } from '../../utils/navigation-gestures';
 import { useScreenPerfReporter } from '../../utils/screen-perf';
@@ -243,6 +245,8 @@ export default function CartScreen() {
     selectedCurrency,
     orders = [],
     checkoutTotals,
+    activeCoupon,
+    activeCouponDiscount,
   } = useCart();
   const { addHistoryEvent } = useHistoryEvents();
   const { addToWishlist } = useWishlist();
@@ -255,6 +259,24 @@ export default function CartScreen() {
   const [loadingRecommendations, setLoadingRecommendations] = useState(true);
   const [confirmationMessage, setConfirmationMessage] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+
+  // Rewards button bounce-in animation
+  const rewardsBounce = useSharedValue(0);
+
+  useEffect(() => {
+    rewardsBounce.value = withDelay(
+      400,
+      withSpring(1, { damping: 8, stiffness: 120, mass: 0.8 })
+    );
+  }, []);
+
+  const rewardsStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: rewardsBounce.value },
+      { translateY: (1 - rewardsBounce.value) * -20 },
+    ],
+    opacity: rewardsBounce.value,
+  }));
   type CartLineEntry = {
     item: any;
     key: string;
@@ -624,6 +646,11 @@ export default function CartScreen() {
               <Text style={styles.shippingOffer}>Exclusive</Text>
             </View>
 
+            <FreeShippingProgressBar
+              orderTotalBase={orderTotal}
+              formatMoney={(value) => formatMoney(value, selectedCurrency)}
+            />
+
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Cart</Text>
               <Text style={styles.sectionMeta}>
@@ -634,7 +661,7 @@ export default function CartScreen() {
         )}
       </>
     ),
-    [confirmationMessage, hasCartItems, itemCount]
+    [confirmationMessage, hasCartItems, itemCount, orderTotal, formatMoney, selectedCurrency]
   );
 
   const renderRecommendations = useMemo(
@@ -694,6 +721,17 @@ export default function CartScreen() {
             <Text style={styles.summaryLabel}>Shipping</Text>
             <Text style={styles.summaryGreen}>FREE</Text>
           </View>
+
+          {activeCouponDiscount > 0 ? (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>
+                Coupon ({activeCoupon?.title || 'discount'})
+              </Text>
+              <Text style={styles.summaryDiscount}>
+                −{formatMoney(activeCouponDiscount, selectedCurrency)}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.summaryDivider} />
 
@@ -818,7 +856,6 @@ export default function CartScreen() {
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
         onScroll={handleCartScroll}
-        scrollEventThrottle={16}
         {...CATALOG_LIST_PROPS}
         refreshControl={
           <RefreshControl
@@ -831,7 +868,7 @@ export default function CartScreen() {
 
       {hasCartItems ? (
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <View style={styles.promoTabWrap}>
+        <Animated.View style={[styles.promoTabWrap, rewardsStyle]}>
           <TouchableOpacity
             style={styles.promoTab}
             activeOpacity={0.92}
@@ -840,7 +877,7 @@ export default function CartScreen() {
             <Ionicons name="gift-outline" size={15} color="#fff" />
             <Text style={styles.promoTabText}>Rewards</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
         <View>
           <Text style={styles.bottomTotalLabel}>Total</Text>
@@ -1124,6 +1161,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
     color: COLORS.green,
+  },
+  summaryDiscount: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#ff3b30',
   },
   summaryOrange: {
     flex: 1,

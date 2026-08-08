@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import RequireSignIn from '../../components/RequireSignIn';
 import BalanceTicketVisual from '../../components/rewards-demo/BalanceTicketVisual';
 import CelebrationGlow from '../../components/rewards-demo/CelebrationGlow';
+import { recordQuestProgress } from '../../utils/quest-engine';
 import CelebrationVisual from '../../components/rewards-demo/CelebrationVisual';
 import ChallengePanel from '../../components/rewards-demo/ChallengePanel';
 import DemoButton from '../../components/rewards-demo/DemoButton';
@@ -108,7 +109,7 @@ function BottomActionDock({ bottomInset, children }: BottomActionDockProps) {
 function SpecialRewardChallengeContent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { profileId } = useUser();
+  const { profileId, isSignedIn } = useUser();
   const { syncWalletBalanceFromBackend } = useCart() as {
     syncWalletBalanceFromBackend?: (balanceTtd: number) => void;
   };
@@ -248,6 +249,15 @@ function SpecialRewardChallengeContent() {
 
         if (__DEV__) {
           console.log('[SpecialReward] Invite share result:', result);
+        }
+
+        // Share Quest: product/invite shared → earn locked credit
+        if (isSignedIn && profileId) {
+          void recordQuestProgress(
+            { profileId, isSignedIn },
+            'share-1-product',
+            `invite:${referralCode || 'special-reward'}`
+          );
         }
 
         if (options?.advanceOnSuccess && result.action === Share.sharedAction) {

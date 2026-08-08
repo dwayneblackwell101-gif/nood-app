@@ -17,6 +17,7 @@ import {
   type WishlistItem,
 } from '../utils/wishlist-storage';
 import { mergeGuestWishlistIntoMember, syncWishlistToCustomerAccount } from '../utils/wishlist-sync';
+import { checkWishlistPriceDrops } from '../utils/wishlist-price-alerts';
 
 type WishlistContextType = {
   items: WishlistItem[];
@@ -59,6 +60,16 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
     try {
       const savedItems = await getWishlistItems(customerKey);
       setItems(savedItems);
+
+      // Price-drop alerts: compare saved prices to current prices where a
+      // product snapshot is available. Wired to the local notification system.
+      void checkWishlistPriceDrops(savedItems).catch((error) => {
+        if (__DEV__) {
+          console.log('[WISHLIST PRICE DROP] check failed', {
+            message: String((error as any)?.message || error || ''),
+          });
+        }
+      });
     } catch (error) {
       console.log('Wishlist refresh error:', error);
       setItems([]);
