@@ -24,6 +24,7 @@ scripts/check-product-availability.mjs
 scripts/refresh-shopify-availability.mjs
 scripts/verify-auth-flow.mjs
 
-# Use EAS prebuild + config plugins instead of stale local native projects.
-android/
+# The android/ folder is PREBUILT with Firebase + ViroReact native config,
+# so it must be uploaded for the build (not regenerated).
+# android/  <- REMOVED from ignore; it must ship with the build
 ios/

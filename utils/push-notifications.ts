@@ -41,12 +41,20 @@ export function isExpoGoRuntime() {
 
 function getExpoProjectId() {
   const constants = Constants as any;
-  return (
+  const baked =
     constants?.easConfig?.projectId ||
     constants?.expoConfig?.extra?.eas?.projectId ||
     constants?.manifest2?.extra?.eas?.projectId ||
-    ''
-  );
+    '';
+  if (baked) return baked;
+
+  // Runtime fallback so installed builds that predate the correct app.json
+  // can still register push tokens. Matches the EAS project id.
+  const fromEnv = String(process.env.EXPO_PUBLIC_EAS_PROJECT_ID || '').trim();
+  if (fromEnv) return fromEnv;
+
+  // Hard fallback: the current EAS project id for NOOD.
+  return '36b5f555-a445-4e13-943b-47899596b01d';
 }
 
 function getAppVersion() {
@@ -484,7 +492,30 @@ export async function presentLocalNotification(options: {
 if (__DEV__) {
   const globalScope = globalThis as typeof globalThis & {
     resetNotificationPrompt?: () => Promise<void>;
+    testPushSetup?: () => Promise<any>;
+    forcePushRegister?: () => Promise<string>;
   };
 
   globalScope.resetNotificationPrompt = resetNotificationPromptForTesting;
+
+  // Dev helper: run this in the app console to see WHY push isn't working.
+  globalScope.testPushSetup = async () => {
+    const checks = {
+      appOwnership: getAppOwnership(),
+      native: isNativePushEnvironment(),
+      expoGo: isExpoGoRuntime(),
+      projectId: getExpoProjectId(),
+      permission: await getNotificationPermissionStatus().catch((e) => 'error:' + e.message),
+      canUseRemote: await canUseRemotePushNotifications(),
+    };
+    console.log('[PUSH TEST]', checks);
+    return checks;
+  };
+
+  // Dev helper: force register the push token now.
+  globalScope.forcePushRegister = async () => {
+    const token = await ensurePushTokenRegistered('dev-test-user');
+    console.log('[PUSH FORCE] token:', token ? token.slice(0, 40) + '...' : '(empty — skipped)');
+    return token;
+  };
 }

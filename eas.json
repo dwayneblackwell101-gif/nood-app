@@ -9,6 +9,7 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_DEV_CLIENT": "1",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "36b5f555-a445-4e13-943b-47899596b01d",
         "EXPO_PUBLIC_BACKEND_URL": "https://nood-backend.onrender.com",
         "EXPO_PUBLIC_LOCAL_BACKEND": "false",
         "EXPO_PUBLIC_PAYPAL_CLIENT_ID": "AU93u5XP5vL8kPxlzqe87Nzqu9qxeB4Pabmz0v83VO95F--bNTOp7s0Sm_9-5mU1tZv-xzNIjPvlAbts",
@@ -35,6 +36,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "36b5f555-a445-4e13-943b-47899596b01d",
         "EXPO_PUBLIC_BACKEND_URL": "https://nood-backend.onrender.com",
         "EXPO_PUBLIC_PAYPAL_CLIENT_ID": "AU93u5XP5vL8kPxlzqe87Nzqu9qxeB4Pabmz0v83VO95F--bNTOp7s0Sm_9-5mU1tZv-xzNIjPvlAbts",
         "EXPO_PUBLIC_PAYPAL_ENV": "sandbox",
