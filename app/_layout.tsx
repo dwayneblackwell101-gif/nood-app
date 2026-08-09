@@ -248,7 +248,7 @@ function WelcomeModalHost({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isReady, isSignedIn } = useUser();
+  const { isReady, isSignedIn, profileId } = useUser();
   const loginActionsEnabled = SIGN_IN_ENABLED;
 
   const isAuthRoute =
