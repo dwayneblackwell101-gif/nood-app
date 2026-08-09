@@ -100,6 +100,7 @@ export default function RootLayout() {
 
 function RootLayoutInner() {
   const bootstrapAlreadyComplete = isAppBootstrapComplete();
+  const { profileId } = useUser();
   const [iconsReady, setIconsReady] = useState(
     () => Platform.OS === 'web' || bootstrapAlreadyComplete
   );

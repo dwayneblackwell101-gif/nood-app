@@ -107,8 +107,7 @@
       "eas": {
         "projectId": "36b5f555-a445-4e13-943b-47899596b01d"
       },
-      "devClient": false
-    },
-    "owner": "noodcaribbean"
+      "devClient": true
+    }
   }
 }
