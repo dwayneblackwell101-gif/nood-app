@@ -49,6 +49,7 @@ import NoodBouncingLogo from '../components/NoodBouncingLogo';
 import RewardInviteDeepLinkListener from '../components/RewardInviteDeepLinkListener';
 import RewardPopupHost from '../components/RewardPopupHost';
 import ShopifyAuthDeepLinkListener from '../components/ShopifyAuthDeepLinkListener';
+import { NotificationListener } from '../components/NotificationListener';
 
 const webShadow = (value: string) => (Platform.OS === 'web' ? { boxShadow: value } : {});
 const platformShadow = (webValue: string, nativeValue: object) =>
@@ -213,6 +214,7 @@ function RootLayoutInner() {
     <GestureHandlerRootView style={styles.rootShell}>
       <ShopifyAuthDeepLinkListener />
       <RewardInviteDeepLinkListener />
+      <NotificationListener />
       <Stack
         screenOptions={{
           headerShown: false,

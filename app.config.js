@@ -24,6 +24,7 @@ module.exports = ({ config }) => {
       ...appJson.expo.android,
       ...config.android,
       permissions: androidPermissions,
+      googleServicesFile: './android/app/google-services.json',
     },
     plugins: [
       ...(appJson.expo.plugins || []),

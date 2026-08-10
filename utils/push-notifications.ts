@@ -242,18 +242,45 @@ export async function getNotificationPermissionStatus(): Promise<NotificationPer
 async function ensureAndroidNotificationChannel(Notifications: typeof import('expo-notifications')) {
   if (Platform.OS !== 'android') return;
 
+  const channels = [
+    { id: 'default', name: 'NOOD Alerts', importance: Notifications.AndroidImportance.DEFAULT },
+    { id: 'nood-general', name: 'NOOD General', importance: Notifications.AndroidImportance.DEFAULT },
+    { id: 'nood-orders', name: 'NOOD Orders', importance: Notifications.AndroidImportance.HIGH },
+    { id: 'nood-deals', name: 'NOOD Deals', importance: Notifications.AndroidImportance.HIGH },
+    { id: 'nood-rewards', name: 'NOOD Rewards', importance: Notifications.AndroidImportance.HIGH },
+  ];
+
   try {
-    await Notifications.setNotificationChannelAsync('default', {
-      name: 'NOOD Alerts',
-      importance: Notifications.AndroidImportance.DEFAULT,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF7A00',
-    });
+    for (const channel of channels) {
+      await Notifications.setNotificationChannelAsync(channel.id, {
+        name: channel.name,
+        importance: channel.importance,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF7A00',
+      });
+    }
   } catch (error) {
     logNotifications('skipped reason', {
       reason: 'android-channel-error',
       message: String((error as any)?.message || error || ''),
     });
+  }
+}
+
+/** Map a notification data type to an Android channel id. */
+export function notificationTypeToChannel(type?: string): string {
+  switch (type) {
+    case 'order-update':
+      return 'nood-orders';
+    case 'flash-live':
+    case 'hot-product':
+    case 'price-drop':
+    case 'new_product':
+      return 'nood-deals';
+    case 'daily-reward':
+      return 'nood-rewards';
+    default:
+      return 'nood-general';
   }
 }
 
