@@ -31,6 +31,8 @@ import { VideoView, useVideoPlayer, type VideoSource } from 'expo-video';
 import { WebView } from 'react-native-webview';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCart } from '../../context/CartContext';
+import { useUpdates } from '../../context/UpdatesContext';
+import { inboxMetaForType, formatInboxRelativeTime, inboxToNavigation } from '../../utils/inbox';
 import NoodSpinner from '../../components/NoodSpinner';
 import CameraSearchModal, { type CameraSearchPhoto } from '../../components/CameraSearchModal';
 import { postBackendJson } from '../../utils/backend';
@@ -2568,10 +2570,33 @@ type HeroUpdatesSlideProps = {
   onOpenDeals?: () => void;
 };
 
+/**
+ * NOOD Inbox slide on Home — shows REAL backend notification history
+ * (newest first, latest 4) with the real unread count. Tapping an item
+ * routes through the same logic as push taps (inboxToNavigation).
+ */
 const HeroUpdatesSlide = React.memo(function HeroUpdatesSlide({
   onOpenUpdates,
-  onOpenDeals,
 }: HeroUpdatesSlideProps) {
+  const { updates, unreadCount, openUpdate, loadMoreInbox, inboxHasMore } = useUpdates();
+  const router = useRouter();
+
+  // Real inbox items only (fall back to legacy static cards when empty).
+  // Show all loaded notifications (newest first) — a vertical scrollable feed.
+  const displayItems = updates;
+
+  const handlePressItem = (update: any) => {
+    if (update.raw) {
+      const dest = inboxToNavigation(update.raw);
+      if (dest) {
+        void openUpdate(update);
+        router.push(dest.pathname as any, dest.params as any);
+        return;
+      }
+    }
+    void openUpdate(update);
+  };
+
   return (
     <View style={styles.heroUpdatesSlide}>
       <TouchableOpacity
@@ -2589,7 +2614,9 @@ const HeroUpdatesSlide = React.memo(function HeroUpdatesSlide({
           </Text>
         </View>
         <View style={styles.heroUpdatesCountBadge}>
-          <Text style={styles.heroUpdatesCountText}>6 new</Text>
+          <Text style={styles.heroUpdatesCountText}>
+            {unreadCount > 0 ? `${Math.min(unreadCount, 99)} new` : 'All caught up'}
+          </Text>
         </View>
       </TouchableOpacity>
 
@@ -2599,37 +2626,75 @@ const HeroUpdatesSlide = React.memo(function HeroUpdatesSlide({
         nestedScrollEnabled={true}
         showsVerticalScrollIndicator={false}
         bounces
+        onScroll={({ nativeEvent }) => {
+          // Load older notifications when the user scrolls near the bottom.
+          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+          const nearBottom =
+            layoutMeasurement.height + contentOffset.y >= contentSize.height - 120;
+          if (nearBottom && inboxHasMore) {
+            void loadMoreInbox();
+          }
+        }}
+        scrollEventThrottle={160}
       >
-        {HERO_UPDATE_ITEMS.map((item) => (
-          <TouchableOpacity
-            key={item.id}
-            style={styles.heroUpdateCard}
-            activeOpacity={0.9}
-            onPress={() => {
-              if (item.id === 'deals' && onOpenDeals) {
-                onOpenDeals();
-              }
-            }}
-          >
-            <View style={[styles.heroUpdateIconWrap, { backgroundColor: `${item.tint}12` }]}>
-              <Ionicons name={item.icon} size={23} color={item.tint} />
-            </View>
+        {displayItems.map((update: any) => {
+          const meta = update.raw
+            ? inboxMetaForType(update.raw.type)
+            : { label: update.type, icon: 'notifications-outline', color: '#ff6a00' };
+          const unread = update.raw ? !update.raw.read : true;
+          const time = update.raw
+            ? formatInboxRelativeTime(update.createdAt)
+            : update.time || 'Recently';
 
-            <View style={styles.heroUpdateContent}>
-              <View style={[styles.heroUpdateLabel, { backgroundColor: `${item.tint}14` }]}>
-                <Text style={[styles.heroUpdateLabelText, { color: item.tint }]}>
-                  {item.label}
-                </Text>
+          return (
+            <TouchableOpacity
+              key={update.id}
+              style={styles.heroUpdateCard}
+              activeOpacity={0.9}
+              onPress={() => handlePressItem(update)}
+            >
+              <View style={[styles.heroUpdateIconWrap, { backgroundColor: `${meta.color}12` }]}>
+                <Ionicons name={meta.icon as any} size={23} color={meta.color} />
               </View>
-              <Text style={styles.heroUpdateTitle}>{item.title}</Text>
-              <Text style={styles.heroUpdateBody}>{item.body}</Text>
-              <Text style={styles.heroUpdateTime}>{item.time}</Text>
-              <Text style={[styles.heroUpdateAction, { color: item.tint }]}>{item.action}</Text>
-            </View>
 
-            <View style={[styles.heroUpdateDot, { backgroundColor: item.tint }]} />
+              <View style={styles.heroUpdateContent}>
+                <View style={[styles.heroUpdateLabel, { backgroundColor: `${meta.color}14` }]}>
+                  <Text style={[styles.heroUpdateLabelText, { color: meta.color }]}>
+                    {meta.label}
+                  </Text>
+                </View>
+                <Text style={styles.heroUpdateTitle}>{update.title}</Text>
+                <Text style={styles.heroUpdateBody}>{update.message || update.body}</Text>
+                <Text style={styles.heroUpdateTime}>{time}</Text>
+                {unread ? (
+                  <Text style={[styles.heroUpdateAction, { color: meta.color }]}>New · View →</Text>
+                ) : (
+                  <Text style={[styles.heroUpdateAction, { color: meta.color }]}>View →</Text>
+                )}
+              </View>
+
+              {unread ? (
+                <View style={[styles.heroUpdateDot, { backgroundColor: meta.color }]} />
+              ) : (
+                <View style={[styles.heroUpdateDot, { backgroundColor: '#e5d9ce' }]} />
+              )}
+            </TouchableOpacity>
+          );
+        })}
+
+        {inboxHasMore ? (
+          <TouchableOpacity
+            style={styles.heroUpdateViewAll}
+            activeOpacity={0.9}
+            onPress={() => void loadMoreInbox()}
+          >
+            <Text style={styles.heroUpdateViewAllText}>Load older notifications ↓</Text>
           </TouchableOpacity>
-        ))}
+        ) : null}
+
+        <TouchableOpacity style={styles.heroUpdateViewAll} activeOpacity={0.9} onPress={onOpenUpdates}>
+          <Text style={styles.heroUpdateViewAllText}>View all in NOOD Inbox →</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );

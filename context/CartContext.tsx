@@ -4,7 +4,7 @@ import { InteractionManager } from 'react-native';
 import { useUser } from './UserContext';
 import { useHistoryEvents } from './HistoryContext';
 import { BASE_CURRENCY, convertPrice, ensureExchangeRates, formatMoney } from '../utils/currency';
-import { buildCheckoutTotals, SHOPIFY_CHECKOUT_CURRENCY } from '../utils/checkout-totals';
+import { buildCheckoutTotals, calculateCheckoutSubtotal, SHOPIFY_CHECKOUT_CURRENCY } from '../utils/checkout-totals';
 import { getActiveCoupons, markCouponUsed, type ClaimedCoupon } from '../utils/coupon-deals';
 import { getCartStorageKey } from '../utils/customer-storage';
 import {
@@ -276,6 +276,15 @@ export const CartProvider = ({ children }: any) => {
       setOrdersSyncing(false);
     }
   }, [applyOrdersState, isSignedIn, profileId]);
+
+  // Consume the applied coupon after a successful order. Declared before
+  // saveOrderAfterPayment (which calls it) to avoid a use-before-declaration.
+  const consumeActiveCoupon = useCallback(async () => {
+    if (activeCoupon) {
+      await markCouponUsed(activeCoupon.id);
+      setActiveCoupon(null);
+    }
+  }, [activeCoupon]);
 
   const saveOrderAfterPayment = useCallback(
     async (input: PaymentOrderSaveInput): Promise<boolean> => {
@@ -824,6 +833,22 @@ export const CartProvider = ({ children }: any) => {
 
   const cartCount = cartItems.reduce((sum, i) => sum + Number(i.quantity || 0), 0);
 
+  const checkoutSubtotal = useMemo(
+    () =>
+      ratesVersion < 0
+        ? 0
+        : calculateCheckoutSubtotal(cartItems, convertPrice, SHOPIFY_CHECKOUT_CURRENCY),
+    [cartItems, convertPrice, ratesVersion]
+  );
+
+  const activeCouponDiscount = useMemo(() => {
+    if (!activeCoupon) return 0;
+    if (activeCoupon.percentOff != null) {
+      return (checkoutSubtotal * activeCoupon.percentOff) / 100;
+    }
+    return activeCoupon.amountOff || 0;
+  }, [activeCoupon, checkoutSubtotal]);
+
   const checkoutTotals = useMemo(() => {
     if (ratesVersion < 0) {
       return buildCheckoutTotals([], convertPrice, SHOPIFY_CHECKOUT_CURRENCY);
@@ -839,7 +864,7 @@ export const CartProvider = ({ children }: any) => {
       // Pick the coupon with the largest discount value (amountOff or %).
       let best: ClaimedCoupon | null = null;
       for (const coupon of active) {
-        const subtotal = Number(checkoutTotals?.subtotal || 0);
+        const subtotal = Number(checkoutSubtotal || 0);
         const value =
           coupon.percentOff != null
             ? (subtotal * coupon.percentOff) / 100
@@ -853,30 +878,13 @@ export const CartProvider = ({ children }: any) => {
       setActiveCoupon(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cartItems.length]);
+  }, [cartItems.length, checkoutSubtotal]);
 
   useEffect(() => {
     void loadActiveCoupon();
   }, [loadActiveCoupon, cartItems.length]);
 
-  const activeCouponDiscount = useMemo(() => {
-    if (!activeCoupon) return 0;
-    const subtotal = Number(checkoutTotals?.subtotal || 0);
-    if (activeCoupon.percentOff != null) {
-      return (subtotal * activeCoupon.percentOff) / 100;
-    }
-    return activeCoupon.amountOff || 0;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCoupon, checkoutTotals?.subtotal]);
-
   // Mark the coupon used after a successful order.
-  const consumeActiveCoupon = useCallback(async () => {
-    if (activeCoupon) {
-      await markCouponUsed(activeCoupon.id);
-      setActiveCoupon(null);
-    }
-  }, [activeCoupon]);
-
   const cartSubtotalRaw = checkoutTotals.total;
 
   const syncWalletBalanceFromBackend = useCallback(

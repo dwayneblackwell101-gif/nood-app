@@ -3,6 +3,7 @@ import { Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, Vi
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { NoodUpdate, UpdateType, useUpdates } from '../../context/UpdatesContext';
+import { inboxMetaForType, formatInboxRelativeTime } from '../../utils/inbox';
 
 const TYPE_META: Record<UpdateType, { label: string; icon: React.ComponentProps<typeof Ionicons>['name']; color: string }> = {
   deal: { label: 'Deal', icon: 'pricetag-outline', color: '#ff6a00' },
@@ -20,9 +21,22 @@ function formatDate(value: string) {
   return date.toLocaleString();
 }
 
+/** Icon/color meta for a NoodUpdate — real inbox items use type meta. */
+function metaFor(update: NoodUpdate) {
+  if (update.raw) {
+    const meta = inboxMetaForType(update.raw.type);
+    return {
+      label: meta.label,
+      icon: meta.icon as React.ComponentProps<typeof Ionicons>['name'],
+      color: meta.color,
+    };
+  }
+  return TYPE_META[update.type] || TYPE_META.app;
+}
+
 export default function UpdatesScreen() {
   const router = useRouter();
-  const { updates, readUpdateIds, unreadCount, markAllUpdatesRead, openUpdate } = useUpdates();
+  const { updates, readUpdateIds, unreadCount, markAllUpdatesRead, openUpdate, inboxLoading } = useUpdates();
 
   const handleOpenUpdate = (update: NoodUpdate) => {
     void openUpdate(update);
@@ -60,15 +74,15 @@ export default function UpdatesScreen() {
           ) : null}
         </View>
 
-        {updates.length === 0 ? (
+        {updates.length === 0 && !inboxLoading ? (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>No updates yet</Text>
             <Text style={styles.emptyText}>New NOOD announcements will appear here.</Text>
           </View>
         ) : (
           updates.map((update) => {
-            const meta = TYPE_META[update.type];
-            const unread = !readUpdateIds.includes(update.id);
+            const meta = metaFor(update);
+            const unread = update.raw ? !update.raw.read : !readUpdateIds.includes(update.id);
 
             return (
               <TouchableOpacity
@@ -96,7 +110,9 @@ export default function UpdatesScreen() {
 
                   <Text style={styles.updateTitle}>{update.title}</Text>
                   <Text style={styles.updateMessage}>{update.message}</Text>
-                  <Text style={styles.updateDate}>{formatDate(update.createdAt)}</Text>
+                  <Text style={styles.updateDate}>
+                    {update.raw ? formatInboxRelativeTime(update.createdAt) : formatDate(update.createdAt)}
+                  </Text>
 
                   {update.actionLabel ? (
                     <View style={styles.actionRow}>

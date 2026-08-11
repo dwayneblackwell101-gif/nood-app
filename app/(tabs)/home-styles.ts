@@ -760,6 +760,18 @@ export const homeStyles = StyleSheet.create({
     borderRadius: 5,
   },
 
+  heroUpdateViewAll: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+
+  heroUpdateViewAllText: {
+    color: '#ff6a00',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
   showcaseWrap: {
     paddingTop: 6,
     paddingBottom: 12,

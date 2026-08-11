@@ -481,6 +481,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     await shopifyCustomerLogout();
 
+    // Detach the push token from this user on logout so private
+    // notifications (orders, cart, tracking, rewards) cannot leak to the
+    // next person using this device.
+    try {
+      const { getStoredPushTokenForLogout, detachPushToken } = await import('../utils/inbox');
+      const token = await getStoredPushTokenForLogout();
+      if (token) {
+        await detachPushToken(token).catch(() => {});
+      }
+    } catch {
+      // non-fatal
+    }
+
     const existingGuestProfileId = await AsyncStorage.getItem(GUEST_PROFILE_ID_KEY);
     const nextGuestProfileId = existingGuestProfileId || createProfileId('guest');
 

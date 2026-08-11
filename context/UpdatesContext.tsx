@@ -8,13 +8,23 @@ import {
   requestNotificationPermissionAndToken,
   savePushTokenLocally,
 } from '../utils/push-notifications';
+import {
+  fetchInbox,
+  markInboxReadBackend,
+  markAllInboxReadBackend,
+  inboxToNavigation,
+  type InboxItem,
+} from '../utils/inbox';
 import { useUser } from './UserContext';
 
-const READ_UPDATES_KEY = 'NOOD_READ_UPDATES_V1';
 const NOTIFICATION_SETTINGS_KEY = 'NOOD_NOTIFICATION_SETTINGS_V1';
 
 export type UpdateType = 'deal' | 'app' | 'arrival' | 'reward' | 'shipping' | 'sale' | 'coupon';
 
+/**
+ * Backward-compatible NoodUpdate shape — the new backend-driven inbox items
+ * map onto this so existing consumers (Home, Updates screen) keep working.
+ */
 export type NoodUpdate = {
   id: string;
   type: UpdateType;
@@ -25,6 +35,9 @@ export type NoodUpdate = {
   actionLabel?: string;
   createdAt: string;
   enabled: boolean;
+  raw?: InboxItem;
+  read?: boolean;
+  isInboxItem?: boolean;
 };
 
 export type NotificationSettings = {
@@ -41,9 +54,11 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   shippingAlerts: true,
 };
 
-export const updates: NoodUpdate[] = [
+// Legacy static updates kept ONLY as a fallback when the backend is
+// unreachable and no cache exists yet. Real data comes from the backend.
+export const legacyUpdates: NoodUpdate[] = [
   {
-    id: 'deal-1',
+    id: 'legacy-deal-1',
     type: 'deal',
     title: 'New deals just dropped',
     message: "Check out today's best prices before they're gone.",
@@ -53,62 +68,35 @@ export const updates: NoodUpdate[] = [
     createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
     enabled: true,
   },
-  {
-    id: 'reward-1',
-    type: 'reward',
-    title: 'Lucky Spin is live',
-    message: 'Win small locked rewards and unlock them with qualifying spend.',
-    imageUrl: '',
-    targetRoute: '/account/rewards',
-    actionLabel: 'View rewards',
-    createdAt: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
-    enabled: true,
-  },
-  {
-    id: 'shipping-1',
-    type: 'shipping',
-    title: 'Shipping updates in Orders',
-    message: 'Track packages from your Orders page using your tracking number.',
-    imageUrl: '',
-    targetRoute: '/account/orders',
-    actionLabel: 'Track order',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
-    enabled: true,
-  },
-  {
-    id: 'arrival-1',
-    type: 'arrival',
-    title: 'New arrivals added',
-    message: 'Fresh products are being added across NOOD collections.',
-    imageUrl: '',
-    targetRoute: '/categories',
-    actionLabel: 'Shop now',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 7).toISOString(),
-    enabled: true,
-  },
-  {
-    id: 'app-1',
-    type: 'app',
-    title: 'Address book upgraded',
-    message: 'Save multiple addresses and choose your default shipping address.',
-    imageUrl: '',
-    targetRoute: '/account/address',
-    actionLabel: 'Open address',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
-    enabled: true,
-  },
-  {
-    id: 'coupon-1',
-    type: 'coupon',
-    title: 'Automatic discount reminder',
-    message: 'Add 3 or more items to unlock automatic discounts when available.',
-    imageUrl: '',
-    targetRoute: '/(tabs)/cart',
-    actionLabel: 'Open cart',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
-    enabled: true,
-  },
 ];
+
+/** Map an inbox item's notification type to the legacy UpdateType enum. */
+function updateTypeForInbox(item: InboxItem): UpdateType {
+  const t = item.type;
+  if (t === 'new_product' || t === 'new_brand' || t === 'restock') return 'arrival';
+  if (t === 'daily-reward' || t === 'reward-won' || t === 'spin-ready' || t === 'scratch-ready') return 'reward';
+  if (t === 'flash-live' || t === 'deal-live' || t === 'coupon-ready' || t === 'cart-nudge') return 'deal';
+  if (t === 'order-update' || t === 'order-shipped' || t === 'order-delivered' || t === 'order-in-transit') return 'shipping';
+  if (t === 'cart-nudge') return 'coupon';
+  return 'app';
+}
+
+function inboxToUpdate(item: InboxItem): NoodUpdate {
+  return {
+    id: item.id,
+    type: updateTypeForInbox(item),
+    title: item.title,
+    message: item.body,
+    imageUrl: '',
+    targetRoute: item.route || undefined,
+    actionLabel: 'View →',
+    createdAt: item.createdAt,
+    enabled: true,
+    raw: item,
+    read: item.read,
+    isInboxItem: true,
+  };
+}
 
 type UpdatesContextValue = {
   updates: NoodUpdate[];
@@ -121,6 +109,11 @@ type UpdatesContextValue = {
   updateNotificationSetting: (key: keyof NotificationSettings, value: boolean) => Promise<void>;
   requestPushPermission: () => Promise<string>;
   openUpdate: (update: NoodUpdate) => Promise<void>;
+  refreshInbox: () => Promise<void>;
+  loadMoreInbox: () => Promise<void>;
+  inboxLoading: boolean;
+  inboxLoadedFromCache: boolean;
+  inboxHasMore: boolean;
 };
 
 const UpdatesContext = createContext<UpdatesContextValue | null>(null);
@@ -133,30 +126,26 @@ export function UpdatesProvider({ children }: { children: React.ReactNode }) {
   const [notificationSettings, setNotificationSettings] =
     useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
   const [expoPushToken, setExpoPushToken] = useState('');
+  const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
+  const [inboxLoading, setInboxLoading] = useState(true);
+  const [inboxLoadedFromCache, setInboxLoadedFromCache] = useState(false);
+  const [inboxHasMore, setInboxHasMore] = useState(false);
+  const [inboxLoadingMore, setInboxLoadingMore] = useState(false);
 
-  const readKey = useMemo(() => makeProfileKey(READ_UPDATES_KEY, profileId), [profileId]);
   const settingsKey = useMemo(() => makeProfileKey(NOTIFICATION_SETTINGS_KEY, profileId), [profileId]);
   const tokenKey = useMemo(() => makePushTokenStorageKey(profileId), [profileId]);
-  const enabledUpdates = useMemo(
-    () =>
-      updates
-        .filter((update) => update.enabled)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    []
-  );
 
+  // Load settings + cached token on startup.
   useEffect(() => {
     if (!isReady) return;
 
     const load = async () => {
       try {
-        const [savedRead, savedSettings, savedToken] = await Promise.all([
-          AsyncStorage.getItem(readKey),
+        const [savedSettings, savedToken] = await Promise.all([
           AsyncStorage.getItem(settingsKey),
           AsyncStorage.getItem(tokenKey),
         ]);
 
-        setReadUpdateIds(savedRead ? JSON.parse(savedRead) : []);
         setNotificationSettings(
           savedSettings
             ? { ...DEFAULT_NOTIFICATION_SETTINGS, ...JSON.parse(savedSettings) }
@@ -169,23 +158,72 @@ export function UpdatesProvider({ children }: { children: React.ReactNode }) {
     };
 
     void load();
-  }, [isReady, readKey, settingsKey, tokenKey]);
+  }, [isReady, settingsKey, tokenKey]);
+
+  // Refresh inbox from backend (with offline cache fallback).
+  const refreshInbox = useCallback(async () => {
+    if (!isReady) return;
+    setInboxLoading(true);
+    try {
+      const { items, fromCache } = await fetchInbox({ userId: profileId || '', limit: 20 });
+      setInboxItems(items);
+      setInboxLoadedFromCache(fromCache);
+      setReadUpdateIds(items.filter((i) => i.read).map((i) => i.id));
+      setInboxHasMore(items.length >= 20);
+    } catch {
+      // keep existing items
+    } finally {
+      setInboxLoading(false);
+    }
+  }, [isReady, profileId]);
+
+  // Load the next page of older notifications (load-more pagination).
+  const loadMoreInbox = useCallback(async () => {
+    if (!isReady || inboxLoadingMore) return;
+    setInboxLoadingMore(true);
+    try {
+      const { items } = await fetchInbox({
+        userId: profileId || '',
+        limit: 20,
+        offset: inboxItems.length,
+      });
+      if (items.length) {
+        setInboxItems((prev) => {
+          const seen = new Set(prev.map((i) => i.id));
+          return [...prev, ...items.filter((i) => !seen.has(i.id))];
+        });
+        setInboxHasMore(items.length >= 20);
+      } else {
+        setInboxHasMore(false);
+      }
+    } catch {
+      setInboxHasMore(false);
+    } finally {
+      setInboxLoadingMore(false);
+    }
+  }, [isReady, inboxLoadingMore, inboxItems.length, profileId]);
+
+  useEffect(() => {
+    if (!isReady) return;
+    void refreshInbox();
+  }, [isReady, profileId, refreshInbox]);
 
   const markUpdateRead = useCallback(
     async (id: string) => {
       if (!id || readUpdateIds.includes(id)) return;
-      const next = [id, ...readUpdateIds];
-      setReadUpdateIds(next);
-      await AsyncStorage.setItem(readKey, JSON.stringify(next));
+      setReadUpdateIds((prev) => [id, ...prev]);
+      setInboxItems((prev) => prev.map((i) => (i.id === id ? { ...i, read: true } : i)));
+      await markInboxReadBackend({ userId: profileId || '', notificationId: id });
     },
-    [readKey, readUpdateIds]
+    [profileId, readUpdateIds]
   );
 
   const markAllUpdatesRead = useCallback(async () => {
-    const next = enabledUpdates.map((update) => update.id);
-    setReadUpdateIds(next);
-    await AsyncStorage.setItem(readKey, JSON.stringify(next));
-  }, [enabledUpdates, readKey]);
+    const unreadIds = inboxItems.filter((i) => !i.read).map((i) => i.id);
+    setReadUpdateIds((prev) => Array.from(new Set([...prev, ...unreadIds])));
+    setInboxItems((prev) => prev.map((i) => ({ ...i, read: true })));
+    await markAllInboxReadBackend({ userId: profileId || '' });
+  }, [inboxItems, profileId]);
 
   const requestPushPermission = useCallback(async () => {
     if (Platform.OS === 'web') return '';
@@ -201,7 +239,6 @@ export function UpdatesProvider({ children }: { children: React.ReactNode }) {
       await registerPushTokenWithBackend({
         token,
         userId: profileId || undefined,
-        deviceId: profileId || undefined,
       });
       return token;
     } catch (error) {
@@ -213,12 +250,6 @@ export function UpdatesProvider({ children }: { children: React.ReactNode }) {
   const updateNotificationSetting = useCallback(
     async (key: keyof NotificationSettings, value: boolean) => {
       const next = { ...notificationSettings, [key]: value };
-
-      if (key === 'notificationsEnabled' && !value) {
-        setNotificationSettings(next);
-        await AsyncStorage.setItem(settingsKey, JSON.stringify(next));
-        return;
-      }
 
       setNotificationSettings(next);
       await AsyncStorage.setItem(settingsKey, JSON.stringify(next));
@@ -233,6 +264,14 @@ export function UpdatesProvider({ children }: { children: React.ReactNode }) {
   const openUpdate = useCallback(
     async (update: NoodUpdate) => {
       await markUpdateRead(update.id);
+      if (update.raw) {
+        // Real inbox item → reuse the push notification routing logic.
+        const dest = inboxToNavigation(update.raw);
+        if (dest) {
+          router.push(dest.pathname as any, dest.params as any);
+          return;
+        }
+      }
       if (update.targetRoute) {
         router.push(update.targetRoute as any);
       }
@@ -240,14 +279,27 @@ export function UpdatesProvider({ children }: { children: React.ReactNode }) {
     [markUpdateRead]
   );
 
-  const unreadCount = useMemo(
-    () => enabledUpdates.filter((update) => !readUpdateIds.includes(update.id)).length,
-    [enabledUpdates, readUpdateIds]
-  );
+  // Merged list: real inbox items first, then legacy fallback (only when no
+  // inbox items at all — e.g. first launch offline).
+  const updates = useMemo(() => {
+    if (inboxItems.length) {
+      return inboxItems.map(inboxToUpdate);
+    }
+    if (!inboxLoading && !inboxLoadedFromCache) {
+      return legacyUpdates;
+    }
+    return [];
+  }, [inboxItems, inboxLoading, inboxLoadedFromCache]);
+
+  const unreadCount = useMemo(() => {
+    const fromItems = inboxItems.filter((i) => !i.read).length;
+    if (inboxItems.length) return fromItems;
+    return legacyUpdates.filter((u) => !readUpdateIds.includes(u.id)).length;
+  }, [inboxItems, readUpdateIds]);
 
   const value = useMemo(
     () => ({
-      updates: enabledUpdates,
+      updates,
       readUpdateIds,
       unreadCount,
       notificationSettings,
@@ -257,18 +309,28 @@ export function UpdatesProvider({ children }: { children: React.ReactNode }) {
       updateNotificationSetting,
       requestPushPermission,
       openUpdate,
+      refreshInbox,
+      loadMoreInbox,
+      inboxLoading,
+      inboxLoadedFromCache,
+      inboxHasMore,
     }),
     [
-      enabledUpdates,
-      expoPushToken,
-      markAllUpdatesRead,
-      markUpdateRead,
-      notificationSettings,
-      openUpdate,
+      updates,
       readUpdateIds,
-      requestPushPermission,
       unreadCount,
+      notificationSettings,
+      expoPushToken,
+      markUpdateRead,
+      markAllUpdatesRead,
       updateNotificationSetting,
+      requestPushPermission,
+      openUpdate,
+      refreshInbox,
+      loadMoreInbox,
+      inboxLoading,
+      inboxLoadedFromCache,
+      inboxHasMore,
     ]
   );
 

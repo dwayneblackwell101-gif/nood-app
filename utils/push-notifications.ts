@@ -138,7 +138,7 @@ export async function canUseRemotePushNotifications() {
   return true;
 }
 
-async function getOrCreateDeviceId() {
+export async function getOrCreateDeviceId() {
   try {
     const existing = await AsyncStorage.getItem(DEVICE_ID_STORAGE_KEY);
     if (existing) return existing;
@@ -371,6 +371,7 @@ export async function registerPushTokenWithBackend(options: {
   platform?: string;
   deviceId?: string;
   userId?: string;
+  email?: string;
   appVersion?: string;
 }) {
   const token = String(options.token || '').trim();
@@ -387,6 +388,7 @@ export async function registerPushTokenWithBackend(options: {
       platform: options.platform || Platform.OS,
       deviceId,
       userId: options.userId || undefined,
+      email: options.email || undefined,
       appVersion: options.appVersion || getAppVersion() || undefined,
       createdAt: new Date().toISOString(),
     });
@@ -401,6 +403,16 @@ export async function registerPushTokenWithBackend(options: {
       message: String((error as any)?.message || error || 'backend-unavailable'),
     });
     return false;
+  }
+}
+
+async function getCustomerEmail(): Promise<string | undefined> {
+  try {
+    const { getCustomerProfile } = await import('./customer-profile');
+    const profile = await getCustomerProfile();
+    return String(profile?.email || '').trim() || undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -420,9 +432,11 @@ export async function ensurePushTokenRegistered(profileId: string) {
   }
 
   await savePushTokenLocally(profileId, token);
+  const email = await getCustomerEmail();
   await registerPushTokenWithBackend({
     token,
     userId: profileId || undefined,
+    email,
   });
 
   return token;
@@ -496,9 +510,16 @@ export async function presentLocalNotification(options: {
     if (status !== 'granted') return false;
 
     const notifications = await loadNotificationsModule();
-    if (!notifications?.default) return false;
+    if (!notifications) return false;
 
-    await notifications.default.scheduleNotificationAsync({
+    // expo-notifications SDK 54 exports named functions directly; the module
+    // has no `.default`. Guard both shapes for safety.
+    const schedule = (notifications as any).scheduleNotificationAsync
+      ? (notifications as any).scheduleNotificationAsync
+      : (notifications as any).default?.scheduleNotificationAsync;
+    if (typeof schedule !== 'function') return false;
+
+    await schedule({
       content: {
         title: options.title,
         body: options.body,

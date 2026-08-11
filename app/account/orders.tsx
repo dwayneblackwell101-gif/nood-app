@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Linking,
@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import RequireSignIn from '../../components/RequireSignIn';
 import { OrderTrackingTimeline } from '../../components/OrderTrackingTimeline';
@@ -136,6 +136,7 @@ function getOrderDisplayStatus(order: any): string {
 function OrdersContent() {
   const router = useRouter();
   const { addHistoryEvent } = useHistoryEvents();
+  const { orderId: linkedOrderId } = useLocalSearchParams<{ orderId?: string }>();
   const {
     orders = [],
     refreshOrdersFromShopify,
@@ -147,12 +148,10 @@ function OrdersContent() {
     useCallback(() => {
       console.log('[ORDERS PAGE REFRESH]', {
         orderCount: Array.isArray(orders) ? orders.length : 0,
-      });
-      console.log('[NOOD account] order product data used', {
-        orderCount: Array.isArray(orders) ? orders.length : 0,
+        linkedOrderId: linkedOrderId || undefined,
       });
       void refreshOrdersFromShopify?.();
-    }, [orders, refreshOrdersFromShopify])
+    }, [orders, refreshOrdersFromShopify, linkedOrderId])
   );
   const [trackingNumber, setTrackingNumber] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
@@ -177,6 +176,23 @@ function OrdersContent() {
       }),
     [orders]
   );
+
+  // Live ref so the deep-link effect can find the target order after refresh.
+  const sortedOrdersRef = useRef(sortedOrders);
+  sortedOrdersRef.current = sortedOrders;
+
+  // Deep link from a push notification (order-update + orderId):
+  // open the detail for that specific order once the list is loaded.
+  useEffect(() => {
+    if (!linkedOrderId || !orders.length) return;
+    const match = sortedOrdersRef.current.find(
+      (o: any) =>
+        String(o?.id) === String(linkedOrderId) || String(o?.name) === String(linkedOrderId)
+    );
+    if (match) {
+      setSelectedOrder(match);
+    }
+  }, [linkedOrderId, orders, sortedOrdersRef]);
 
   const showMessage = (title: string, message: string) => {
     noodAlert(title, message);
