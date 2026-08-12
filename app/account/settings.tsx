@@ -251,11 +251,39 @@ export default function SettingsScreen() {
             onValueChange={(value) => void updateNotificationSetting('notificationsEnabled', value)}
           />
           <NotificationToggle
+            title="New Arrivals"
+            subtitle="New products and fresh styles."
+            value={notificationSettings.newArrivalsAlerts}
+            disabled={!notificationSettings.notificationsEnabled}
+            onValueChange={(value) => void updateNotificationSetting('newArrivalsAlerts', value)}
+          />
+          <NotificationToggle
             title="Deals alerts"
             subtitle="Sales, coupons, and price drops."
             value={notificationSettings.dealsAlerts}
             disabled={!notificationSettings.notificationsEnabled}
             onValueChange={(value) => void updateNotificationSetting('dealsAlerts', value)}
+          />
+          <NotificationToggle
+            title="Wishlist alerts"
+            subtitle="Price drops, restocks, and low stock on saved items."
+            value={notificationSettings.wishlistAlerts}
+            disabled={!notificationSettings.notificationsEnabled}
+            onValueChange={(value) => void updateNotificationSetting('wishlistAlerts', value)}
+          />
+          <NotificationToggle
+            title="Restock alerts"
+            subtitle="Back-in-stock updates for items you're watching."
+            value={notificationSettings.restockAlerts}
+            disabled={!notificationSettings.notificationsEnabled}
+            onValueChange={(value) => void updateNotificationSetting('restockAlerts', value)}
+          />
+          <NotificationToggle
+            title="Cart alerts"
+            subtitle="Reminders, price drops, and restocks for items in your cart."
+            value={notificationSettings.cartAlerts}
+            disabled={!notificationSettings.notificationsEnabled}
+            onValueChange={(value) => void updateNotificationSetting('cartAlerts', value)}
           />
           <NotificationToggle
             title="Rewards alerts"
@@ -265,11 +293,39 @@ export default function SettingsScreen() {
             onValueChange={(value) => void updateNotificationSetting('rewardsAlerts', value)}
           />
           <NotificationToggle
+            title="Games alerts"
+            subtitle="Style challenges and game events."
+            value={notificationSettings.gamesAlerts}
+            disabled={!notificationSettings.notificationsEnabled}
+            onValueChange={(value) => void updateNotificationSetting('gamesAlerts', value)}
+          />
+          <NotificationToggle
             title="Order/shipping alerts"
             subtitle="Order status and package tracking updates."
             value={notificationSettings.shippingAlerts}
             disabled={!notificationSettings.notificationsEnabled}
             onValueChange={(value) => void updateNotificationSetting('shippingAlerts', value)}
+          />
+          <NotificationToggle
+            title="Returns & refunds alerts"
+            subtitle="Return request and refund status updates."
+            value={notificationSettings.returnsAlerts}
+            disabled={!notificationSettings.notificationsEnabled}
+            onValueChange={(value) => void updateNotificationSetting('returnsAlerts', value)}
+          />
+          <NotificationToggle
+            title="Referrals alerts"
+            subtitle="Friend invites, referral rewards, and loyalty updates."
+            value={notificationSettings.referralsAlerts}
+            disabled={!notificationSettings.notificationsEnabled}
+            onValueChange={(value) => void updateNotificationSetting('referralsAlerts', value)}
+          />
+          <NotificationToggle
+            title="Support alerts"
+            subtitle="Replies and updates on your support cases."
+            value={notificationSettings.supportAlerts}
+            disabled={!notificationSettings.notificationsEnabled}
+            onValueChange={(value) => void updateNotificationSetting('supportAlerts', value)}
           />
           <NotificationToggle
             title="Daily reward reminder"

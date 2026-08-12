@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { router } from 'expo-router';
 import {
   makePushTokenStorageKey,
@@ -15,6 +15,7 @@ import {
   inboxToNavigation,
   type InboxItem,
 } from '../utils/inbox';
+import { postBackendJson } from '../utils/backend';
 import { useUser } from './UserContext';
 
 const NOTIFICATION_SETTINGS_KEY = 'NOOD_NOTIFICATION_SETTINGS_V1';
@@ -45,6 +46,14 @@ export type NotificationSettings = {
   dealsAlerts: boolean;
   rewardsAlerts: boolean;
   shippingAlerts: boolean;
+  newArrivalsAlerts: boolean;
+  wishlistAlerts: boolean;
+  restockAlerts: boolean;
+  cartAlerts: boolean;
+  gamesAlerts: boolean;
+  returnsAlerts: boolean;
+  referralsAlerts: boolean;
+  supportAlerts: boolean;
 };
 
 const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
@@ -52,7 +61,33 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   dealsAlerts: true,
   rewardsAlerts: true,
   shippingAlerts: true,
+  newArrivalsAlerts: true,
+  wishlistAlerts: true,
+  restockAlerts: true,
+  cartAlerts: true,
+  gamesAlerts: true,
+  returnsAlerts: true,
+  referralsAlerts: true,
+  supportAlerts: true,
 };
+
+/** Map a frontend settings key → backend preference category (push-config CATEGORY). */
+export function notificationKeyToCategory(key: keyof NotificationSettings): string | null {
+  switch (key) {
+    case 'dealsAlerts': return 'deals';
+    case 'rewardsAlerts': return 'rewards';
+    case 'shippingAlerts': return 'orders'; // orders + tracking both transactional
+    case 'newArrivalsAlerts': return 'arrivals';
+    case 'wishlistAlerts': return 'wishlist';
+    case 'restockAlerts': return 'restock';
+    case 'cartAlerts': return 'cart';
+    case 'gamesAlerts': return 'games';
+    case 'returnsAlerts': return 'returns';
+    case 'referralsAlerts': return 'referrals';
+    case 'supportAlerts': return 'support';
+    default: return null; // notificationsEnabled maps to nothing
+  }
+}
 
 // Legacy static updates kept ONLY as a fallback when the backend is
 // unreachable and no cache exists yet. Real data comes from the backend.
@@ -208,6 +243,33 @@ export function UpdatesProvider({ children }: { children: React.ReactNode }) {
     void refreshInbox();
   }, [isReady, profileId, refreshInbox]);
 
+  // Refresh when the app returns to foreground so the slide always shows
+  // the newest persisted notifications.
+  useEffect(() => {
+    if (!isReady) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void refreshInbox();
+      }
+    });
+    return () => sub.remove();
+  }, [isReady, refreshInbox]);
+
+  // Refresh when a push notification is received while the app is open.
+  useEffect(() => {
+    if (Platform.OS === 'web' || !isReady) return;
+    let sub: any = null;
+    try {
+      const Notifications = require('expo-notifications');
+      sub = Notifications.addNotificationReceivedListener(() => {
+        void refreshInbox();
+      });
+    } catch {
+      // expo-notifications unavailable on this platform
+    }
+    return () => sub?.remove?.();
+  }, [isReady, refreshInbox]);
+
   const markUpdateRead = useCallback(
     async (id: string) => {
       if (!id || readUpdateIds.includes(id)) return;
@@ -257,8 +319,21 @@ export function UpdatesProvider({ children }: { children: React.ReactNode }) {
       if (key === 'notificationsEnabled' && value) {
         await requestPushPermission();
       }
+
+      // Sync to the backend so preference enforcement happens SERVER-SIDE
+      // (push-delivery.js checks isCategoryEnabledForUser). Non-fatal on error.
+      const category = notificationKeyToCategory(key);
+      if (category && profileId) {
+        postBackendJson('/api/notifications/preferences', {
+          userId: profileId,
+          category,
+          enabled: value,
+        }).catch(() => {
+          // non-fatal — local setting still applies
+        });
+      }
     },
-    [notificationSettings, requestPushPermission, settingsKey]
+    [notificationSettings, profileId, requestPushPermission, settingsKey]
   );
 
   const openUpdate = useCallback(

@@ -18,6 +18,8 @@ import {
 } from '../utils/wishlist-storage';
 import { mergeGuestWishlistIntoMember, syncWishlistToCustomerAccount } from '../utils/wishlist-sync';
 import { checkWishlistPriceDrops } from '../utils/wishlist-price-alerts';
+import { postBackendJson } from '../utils/backend';
+import { getStoredPushTokenForLogout as getStoredPushToken } from '../utils/inbox';
 
 type WishlistContextType = {
   items: WishlistItem[];
@@ -46,6 +48,49 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
     [isSignedIn, profileId, userReady]
   );
 
+  // Keep a ref to the latest items for backend sync.
+  const itemsRef = useRef<WishlistItem[]>([]);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  // Sync the signed-in user's wishlist to the backend so server-side
+  // triggers (price-drop / restock / low-stock) can fire per-user.
+  const syncWishlistToBackend = useCallback(
+    async (syncItems?: WishlistItem[]) => {
+      if (!isSignedIn || !profileId) return;
+      const token = await getStoredPushToken().catch(() => undefined);
+      if (!token) return;
+      const list = syncItems || itemsRef.current;
+      if (!list.length) return;
+
+      try {
+        await postBackendJson(
+          '/api/wishlist/sync',
+          {
+            items: list.map((item) => ({
+              handle: String(item.handle || item.id || ''),
+              id: item.id,
+              variantId: item.variantId,
+              title: item.title,
+              price: item.price,
+              currency: item.baseCurrency || item.currency || 'USD',
+              size: item.size,
+              color: item.color,
+              image: item.image,
+            })),
+          },
+          { timeoutMs: 8000, headers: { 'x-push-token': token } }
+        );
+      } catch (error) {
+        if (__DEV__) {
+          console.log('[WISHLIST SYNC] backend sync failed:', String((error as any)?.message || error));
+        }
+      }
+    },
+    [isSignedIn, profileId]
+  );
+
   const refreshWishlist = useCallback(async (options?: { silent?: boolean }) => {
     if (!customerKey) {
       setItems([]);
@@ -60,6 +105,11 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
     try {
       const savedItems = await getWishlistItems(customerKey);
       setItems(savedItems);
+
+      // Push the current list to the backend for trigger computation.
+      if (isSignedIn && profileId) {
+        void syncWishlistToBackend(savedItems);
+      }
 
       // Price-drop alerts: compare saved prices to current prices where a
       // product snapshot is available. Wired to the local notification system.
@@ -77,7 +127,7 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
       hasLoadedOnceRef.current = true;
       setLoading(false);
     }
-  }, [customerKey]);
+  }, [customerKey, isSignedIn, profileId, syncWishlistToBackend]);
 
   const addToWishlist = useCallback(
     async (item: WishlistItem) => {
@@ -87,6 +137,11 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
 
       const result = await addWishlistItem(customerKey, item);
       setItems(result.items);
+
+      // Debounce a backend sync so price/availability triggers can fire.
+      if (isSignedIn && profileId) {
+        void syncWishlistToBackend(result.items);
+      }
 
       void recordWishlistProduct(
         {
@@ -104,7 +159,7 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
 
       return result;
     },
-    [customerKey, isSignedIn, profileId]
+    [customerKey, isSignedIn, profileId, syncWishlistToBackend]
   );
 
   const removeFromWishlist = useCallback(
@@ -115,9 +170,12 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
 
       const nextItems = await removeWishlistItem(customerKey, itemKey);
       setItems(nextItems);
+      if (isSignedIn && profileId) {
+        void syncWishlistToBackend(nextItems);
+      }
       return nextItems;
     },
-    [customerKey]
+    [customerKey, isSignedIn, profileId, syncWishlistToBackend]
   );
 
   useEffect(() => {
